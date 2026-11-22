@@ -739,34 +739,54 @@ process):
   put 22.6 pictures a second on the VM's display, and the launcher's window
   got 6 to 7 of them a second in most runs (about 19 in one).
   The window manager draws 40 times a second by default and waits a whole
-  frame's time before each drawing. `RDK_WINDOW_MANAGER_FRAMERATE=60` was
-  tried, and taken out again: the user interface got 36 pictures a second
-  with it, but about one picture in twenty then lacked a part of what it
-  should show (the logo missing from the home screen for one picture, black
-  patches in video), in QEMU's own display and so not a fault of the
-  window. Of 160 pictures of the still home screen, 7 were so with 60 and
-  none with 40; hiding external images and Mesa's drawing threads made no
-  difference to it. Why the faster pace does this was not found. With 120
-  the rate fell to 5.
+  frame's time before each drawing; the swap then waits for Westeros' own
+  60-a-second timer, so a picture came every 33 or 50 ms in turn. The image
+  now sets `RDK_WINDOW_MANAGER_FRAMERATE=60`, with which the VM's display
+  gets 31 pictures a second at the home screen and 35 while the 1080p
+  stream plays. (With 120 the rate fell to 5, which was not looked at.)
+  The faster pace first showed a fault: about one picture in twenty lacked
+  a part of what it should show (the logo missing from the home screen for
+  one picture, black patches in video), in QEMU's own display. Westeros
+  reads a client's buffer where it is and gives it back to the client when
+  the next one is committed, while Mesa's `llvmpipe` does the drawing only
+  when the picture is swapped; the client was by then drawing its next
+  picture into the buffer. Westeros finishes each surface's drawing before
+  going on for one platform (Broadcom Nexus); a patch asks for the same
+  here (`recipes-graphics/westeros`). Of 160 pictures of the still home
+  screen, 10 lacked a part without it and none with it, and none of 240
+  taken during the 1080p stream had a black patch.
   The way from QEMU to the window was the launcher's fault, and is repaired
   on macOS: QEMU sent each picture (8 MB, uncompressed, over VNC) through a
   private Unix socket, which takes 8 KB at a time on macOS, one piece each
   time QEMU's event loop came round: 130 to 200 ms a picture. Over a port of
   the loopback address a picture arrives in 8 ms, and the window gets 12 to
-  18 pictures a second of the VM's 23. The launcher now uses the port on
+  18 pictures a second of what the VM shows (23 then, about 35 now). The launcher now uses the port on
   macOS as it does on Windows; it has no password, so programs of other
   users of the host can see the display and send keys during a run. What
-  is left between 18 and 23 is QEMU's own pace for VNC (30 ms and more
-  between pictures).
+  holds the window at about 16 to 18 now is QEMU's own pace for VNC (30 ms
+  and more between pictures).
+- *With the host's GPU the user interface is no faster, and video ends
+  Thunder.* Tried on 2026-11-22 with the experimental QEMU for macOS
+  (`./setup.sh --experimental-qemu`, `--graphics host`, QEMU's own window):
+  the image starts, the VM's kernel reports virgl, and at the home screen
+  the VM's CPUs are 98 % idle, yet the display still gets 22 pictures a
+  second. So the drawing was never what held the user interface at 22.6:
+  it is the window manager's wait of 25 ms before each picture together
+  with Westeros' own 60-a-second timer, which the swap waits for (the two
+  give a picture every 33 or 50 ms in turn). When the video sink hands
+  Westeros its first frame in this mode, Thunder ends and is started
+  again: the sink's buffers of the DRM device are not something the host's
+  renderer takes as they are. Not looked at further. In this mode there is
+  no launcher window either: keys sent through QEMU's control channel did
+  not reach the user interface, and the display cannot be captured, so
+  what the window showed was not seen by the one who ran this.
 - *RDK's HDMI-CEC reader kept one of the VM's CPUs busy; repaired.* The VM
   has no CEC adapter, so the driver cannot be opened, and the library's
   reader thread (`Bus::Reader::run`) then asked the unopened driver for a
   frame again and again without a pause, each time answered by an exception.
   A patch to the library (`recipes-middleware/hdmicec`) has it wait 100 ms
   after such an answer. No thread of Thunder is busy at the home screen
-  now. (With the window manager at 60 the 1080p stream then reached the
-  VM's display 28 to 30 times a second; at its own 40, which the image has,
-  it is 23, and the window gets about 18 of them.) In one run after the change the video card stayed black; it played
+  now. In one run after the change the video card stayed black; it played
   in the two runs after that, and what happened was not found.
 - *No check plays a stream with AAMP.* What is said of it above was seen by
   hand. The user interface's streams are on public servers, so a check of

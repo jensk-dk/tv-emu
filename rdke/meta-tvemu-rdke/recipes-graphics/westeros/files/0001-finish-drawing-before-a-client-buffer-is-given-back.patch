@@ -1,0 +1,57 @@
+Westeros reads a client's buffer where it is (no copy), and gives the buffer
+back to the client as soon as the client commits its next one. A renderer that
+draws later than it is asked to (Mesa's llvmpipe draws when the picture is
+swapped) may then read a buffer that the client is already drawing its next
+picture into: about one picture in twenty lacked a part (a logo of the user
+interface, patches of a video frame) when RDK's window manager drew 36 times
+a second. Westeros has the cure for one platform (Broadcom Nexus): finish the
+drawing of each surface before going on. WESTEROS_RENDER_FINISH asks for the
+same on a platform without fences.
+
+Upstream-Status: Pending
+
+diff --git a/westeros-render-embedded.cpp b/westeros-render-embedded.cpp
+index c3ff1ee..0118b96 100644
+--- a/westeros-render-embedded.cpp
++++ b/westeros-render-embedded.cpp
+@@ -2257,9 +2257,16 @@ static void wstRendererUpdateScene( WstRenderer *renderer )
+    glUseProgram( program );
+ 
+    #ifndef ENABLE_LEXPSYNCPROTOCOL
+-   #if defined (WESTEROS_PLATFORM_NEXUS )
+-   {
++   #if defined (WESTEROS_PLATFORM_NEXUS ) || defined (WESTEROS_RENDER_FINISH)
++   {
++      #if defined (WESTEROS_RENDER_FINISH)
++      /* A client's buffer is read where it is, and is given back to the client
++         when its next one is committed. Without fences, nothing else keeps the
++         client from drawing into it again before this drawing has been done. */
++      static bool needFinish= true;
++      #else
+       static bool needFinish= (getenv("WAYLAND_EGL_BNXS_ZEROCOPY") == NULL);
++      #endif
+       // The calls to glFlush/glFinish are not required except on the Broadcom Nexus platform
+       // when older versions of wayland-egl-bnxs are being used.  This code will be removed
+       // in the near future.
+diff --git a/westeros-render-gl.cpp b/westeros-render-gl.cpp
+index 5cc4224..e3dbca4 100644
+--- a/westeros-render-gl.cpp
++++ b/westeros-render-gl.cpp
+@@ -2311,9 +2311,16 @@ static void wstRendererUpdateScene( WstRenderer *renderer )
+    }
+ 
+    #ifndef ENABLE_LEXPSYNCPROTOCOL
+-   #if defined (WESTEROS_PLATFORM_NEXUS )
++   #if defined (WESTEROS_PLATFORM_NEXUS ) || defined (WESTEROS_RENDER_FINISH)
+    {
++      #if defined (WESTEROS_RENDER_FINISH)
++      /* A client's buffer is read where it is, and is given back to the client
++         when its next one is committed. Without fences, nothing else keeps the
++         client from drawing into it again before this drawing has been done. */
++      static bool needFinish= true;
++      #else
+       static bool needFinish= (getenv("WAYLAND_EGL_BNXS_ZEROCOPY") == NULL);
++      #endif
+       // The calls to glFlush/glFinish are not required except on the Broadcom Nexus platform
+       // when older versions of wayland-egl-bnxs are being used.  This code will be removed
+       // in the near future.

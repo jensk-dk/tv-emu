@@ -7,6 +7,12 @@ SRCREV_westeros = "d87a12e80e3b8a5e1c17d8b558db6e29585e3e1b"
 
 CXXFLAGS:append = " -DWESTEROS_PLATFORM_DRM -DUSE_MESA"
 
+# Mesa's software renderer has no fences: Westeros finishes the drawing of a
+# surface before the client can have its buffer back (see the patch).
+FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
+SRC_URI:append = " file://0001-finish-drawing-before-a-client-buffer-is-given-back.patch"
+CXXFLAGS:append = " -DWESTEROS_RENDER_FINISH"
+
 # libwayland-egl is a package of its own in RDK-E's layers.
 DEPENDS:append = " wayland-default-egl virtual/egl"
 RDEPENDS:${PN}:append = " wayland-default-egl"
