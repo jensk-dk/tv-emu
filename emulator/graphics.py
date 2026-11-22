@@ -425,8 +425,16 @@ def _vnc_port():
 def vnc_endpoint():
     """Where QEMU serves a VM's display for the launcher's window. Returns
     (QEMU arguments, address for emulator/rfb.py, directory to remove
-    afterwards)."""
-    path, directory = _private_socket("vnc.sock")
+    afterwards).
+
+    On macOS it is a port of the loopback address, as on Windows, and not a
+    private socket: a socket of that kind takes 8 KB at a time there, QEMU
+    writes one such piece each time its event loop comes round, and a display
+    of 1920x1080 (8 MB a picture) then reached the window 6 to 7 times a
+    second where the port gives 18 to 19. The port has no password: programs
+    of other users of the host can see the display and send keys for the time
+    of the run."""
+    path, directory = (None, None) if host.host_os() == "macos" else _private_socket("vnc.sock")
     if path:
         return ["-vnc", "unix:" + path], path, directory
     port = _vnc_port()

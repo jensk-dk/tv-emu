@@ -1,0 +1,22 @@
+The reader thread asks the driver for a frame in a loop. When the driver is
+not open, the driver answers with an exception at once, and the loop asks
+again at once: a device whose HDMI-CEC driver could not be opened (the virtual
+machine has no CEC adapter) had one CPU busy with it for as long as it ran.
+The loop now waits 100 ms after such an answer.
+
+Upstream-Status: Pending
+
+diff --git a/ccec/src/Bus.cpp b/ccec/src/Bus.cpp
+index da47e0b..c70b69d 100644
+--- a/ccec/src/Bus.cpp
++++ b/ccec/src/Bus.cpp
+@@ -180,6 +180,9 @@ void Bus::Reader::run(void)
+ 		}
+ 		catch(InvalidStateException &e) {
+ 			CCEC_LOG( LOG_DEBUG, "EOF for reader [%d]\r\n", isRunning());
++			/* The driver is not open (it never was, or it is being closed):
++			   there is nothing to wait on, so wait a while before asking again. */
++			if (isRunning()) usleep(100 * 1000);
+ 		}
+ 	}
+ 
