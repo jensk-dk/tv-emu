@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>tv-emu video</title>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+  video { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: fill; }
+</style>
+</head>
+<body>
+<!-- The reference stream of the emulator's media checks (target/media/build-media.sh): a moving test
+     pattern with marker blocks in its corners, and a tone. What the player says of it is put in the
+     page's address, where a check reads it through the browser's Thunder plug-in:
+     #STATE-WIDTHxHEIGHT-TENTHS-ERROR, as in #playing-1280x720-23-0. "?muted" plays without sound.
+
+     The page starts the stream again itself when it has ended. It does not use the "loop" attribute:
+     with it, RDK's WebKit 2.46 on GStreamer 1.18 was seen to stop about two seconds into the stream
+     and stay stopped (rdke/README.md, "Video and sound"). "?loop" uses the attribute all the same,
+     to show that. -->
+<video id="video" src="avc.mp4" playsinline></video>
+<script>
+(function () {
+    var video = document.getElementById("video");
+    var state = "loading";
+    function say() {
+        var error = video.error ? video.error.code : 0;
+        window.location.hash = state + "-" + video.videoWidth + "x" + video.videoHeight + "-" +
+            Math.round(video.currentTime * 10) + "-" + error;
+    }
+    ["loadedmetadata", "canplay", "playing", "pause", "waiting", "stalled", "ended"].forEach(function (name) {
+        video.addEventListener(name, function () { state = name; say(); });
+    });
+    video.addEventListener("error", function () { state = "error"; say(); });
+    video.loop = window.location.search.indexOf("loop") >= 0;
+    video.addEventListener("ended", function () { video.currentTime = 0; video.play(); });
+    video.muted = window.location.search.indexOf("muted") >= 0;
+    var started = video.play();
+    if (started && started.catch) {
+        started.catch(function (reason) { state = "refused:" + reason.name; say(); });
+    }
+    window.setInterval(say, 500);
+    say();
+})();
+</script>
+</body>
+</html>

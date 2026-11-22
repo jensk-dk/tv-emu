@@ -233,6 +233,9 @@ def launch(opts):
         if (catalog.workload(opts.workload) or {}).get(feature) and feature not in drivers \
                 and feature not in drivers.declined:
             drivers[feature] = strategy
+    if rdke and "audio" not in drivers.declined:
+        # An RDK-E target plays sound with its own software, on the sound card the emulator gives it.
+        drivers["audio"] = "host"
     opts.drivers = drivers
     # Attach straight to the terminal for a person; capture everything else.
     attached = interactive and opts.stdin_script is None and host.stdin_is_tty() and sys.stdout.isatty()
@@ -334,6 +337,11 @@ def launch(opts):
                                          "software ALSA device%s" % (
                                              " connected to the host audio process" if opts.drivers["audio"] == "host"
                                              else ""))
+            if rdke and not virtio_sound:
+                # Without the sound card there is only the Debian root file system's own way.
+                outcome.notes[-1] = ("this QEMU build has no virtio-sound-pci device: the RDK-E target has no "
+                                     "sound card")
+                del opts.drivers["audio"]
             plan = driver_features.plan_vm(opts.drivers, str(run_dir), opts.options, opts.muted, virtio_sound)
             terminal = None
             if on_terminal:

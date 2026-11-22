@@ -45,6 +45,27 @@ fi
 # revision, directory: rdke-middleware.xml of middleware-manifest-rdke
 # (develop, 2026-11-20) and, through rdke-middleware-generic-manifest
 # 4c83776, middleware-generic.xml.
+# The reference stream that the browser image plays (tvemu-media): the H.264
+# and AAC stream of the emulator's media checks, made here as the Debian
+# target's build makes it (target/media/build-media.sh, in target/Dockerfile's
+# base image with its FFmpeg). It is data that a build makes, and is not kept
+# in the repository.
+MEDIA_SHA256=0f236ef37b7a6ab1960b0aff0696fd29c4dd1b27b71c59a26a4fd6021b00c125
+fetch_media() {
+  media="$here/meta-tvemu-rdke/recipes-apps/tvemu-media/files/avc.mp4"
+  [ -f "$media" ] && return 0
+  echo "making the reference stream avc.mp4 (target/media/build-media.sh)"
+  "$runtime" run --rm -v "$here/../target/media:/src/media:ro" docker.io/library/debian:trixie-slim sh -c '
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq > /dev/null && apt-get install -y -qq --no-install-recommends ffmpeg python3 > /dev/null &&
+    sh /src/media/build-media.sh /src/media /out > /dev/null && cat /out/avc.mp4' > "$media.new" || {
+    rm -f "$media.new"; echo "the reference stream could not be made" >&2; return 1; }
+  mv -f "$media.new" "$media"
+  found=$( (sha256sum "$media" 2>/dev/null || shasum -a 256 "$media") | cut -d" " -f1)
+  [ "$found" = "$MEDIA_SHA256" ] || echo "note: avc.mp4 is not the stream the checks were written with" \
+    "(sha256 $found): another FFmpeg made it" >&2
+}
+
 fetch_middleware() {
   mw="$work/middleware"
   mkdir -p "$mw"

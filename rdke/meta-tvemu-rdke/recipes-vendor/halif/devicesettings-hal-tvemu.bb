@@ -42,6 +42,13 @@ CFLAGS += " \
 # DOS line ends, which a patch does not carry well.)
 do_configure:prepend() {
     sed -i '/elseif(DRI_CARD STREQUAL "\/dev\/dri\/card0")/,+2d' ${S}/CMakeLists.txt
+    # The sound card: the VM's is the emulator's virtio card, which ALSA
+    # names "SoundCard", with plain PCM output. The Pi's is its HDMI output
+    # ("vc4hdmi0", an IEC 958 device), in the code and in the ALSA
+    # configuration that this component installs (/etc/asound.conf); with
+    # that one, the default device cannot be opened and nothing plays.
+    grep -rl 'vc4hdmi0' ${S} --exclude-dir=.git | xargs -r sed -i \
+        -e 's/iec958:CARD=vc4hdmi0,DEV=0/hw:CARD=SoundCard,DEV=0/g' -e 's/vc4hdmi0/SoundCard/g'
 }
 
 do_install:append() {

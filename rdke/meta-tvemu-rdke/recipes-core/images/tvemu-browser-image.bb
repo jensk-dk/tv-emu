@@ -18,6 +18,9 @@ IMAGE_INSTALL:append = " \
     tvemu-refui \
     tvemu-browser-page \
     tvemu-rdkshell \
+    tvemu-media \
+    gstreamer1.0-libav \
+    alsa-utils-aplay alsa-utils-amixer alsa-utils-speakertest \
     "
 
 IMAGE_ROOTFS_EXTRA_SPACE = "393216"

@@ -606,6 +606,107 @@ of swap added to the engine's VM for the time of the build.
   (`WebKitBrowser`, `LightningApp`), the web inspector, a simulated CPU
   (`--arch arm64` on a host that is not ARM64), and any host but the Mac.
 
+## Video and sound
+
+The browser image plays video with sound in RDK's browser, with the
+target's CPU doing the decoding. Four things were missing or wrong, and one
+fault was found in the browser:
+
+**The VM had no sound card.** The launcher gave a target from the RDK-E
+root file system no driver features at all. It now gives it the emulated
+sound card (virtio sound), with the host-side sound process behind it, as
+it does for the Debian root file system's sound workloads. The kernel
+already had the driver. `--mute` and `./emu audio` work as for those.
+
+**ALSA's default device was the Pi's.** The device settings component, whose
+source is the Pi's, installs `/etc/asound.conf` and names the Pi's HDMI sound
+card in it and in its code. The default device could not be opened, and
+nothing played. The recipe now names the VM's card ("SoundCard") and its
+plain PCM output. The soft volume control of that configuration is kept:
+RDK's volume setting (`org.rdk.DisplaySettings`, `setVolumeLevel`) moves it.
+
+**RDK's FFmpeg has no video decoders.** RDK builds FFmpeg with audio
+decoders only, since a device decodes video in its hardware, behind the
+vendor's video sink. The layer adds the decoders for H.264, HEVC, MPEG-2,
+VP8 and VP9 (`ffmpeg_%.bbappend`), and the image has GStreamer's FFmpeg
+plug-in (`gstreamer1.0-libav`, whose licence flag the Pi's vendor
+configuration, taken over here, already accepts). These are software
+decoders of patented formats: that is a matter for whoever distributes an
+image, and is why RDK leaves them out.
+
+**A video with the `loop` attribute stops.** This is a fault in the image's
+WebKit (2.46.2) with its GStreamer (1.18), not in the VM, and it is not
+repaired here. WebKit plays a looping video as a "segment", and takes the
+message that the segment is done as the end of the stream. GStreamer's MP4
+reader sends that message when it has *read* the file to its end, which for
+the five-second reference stream is about 2.3 seconds into playing it.
+WebKit then seeks to the start in the middle of the stream, and that seek
+does not complete: the sound card's output stays paused, the player's time
+stands still, and the page still says "playing". It was first taken for a
+fault in how WebKit draws video without the vendor's sink, and WebKit was
+built with GStreamer's GL path to go around that; it then stopped in every
+start, where before it stopped in about one of three. The media
+framework's own log showed the cause. WebKit is built as RDK configures it
+again, and the reference page starts the stream again itself when it has
+ended. `video.html?loop` uses the attribute, and shows the fault.
+
+WebKit draws the video itself: RDK builds it to leave a hole in the page for
+the vendor's video sink, which is only done where a device says so
+(`WEBKIT_GST_HOLE_PUNCH_QUIRK`), and the VM does not.
+
+**There was nothing to play.** The image has the H.264 and AAC reference
+stream of the emulator's media checks (`tvemu-media`: 1280x720, 25 frames a
+second, 5 seconds, marker blocks in its corners, an 880 Hz tone) and a page
+that plays it again and again and says in its address what the player reports.
+`rdke/build.sh` makes the stream with `target/media/build-media.sh`, as the
+Debian target's build does; it is not kept in the repository.
+
+    tvemu-app-start HtmlApp file:///usr/share/tvemu/media/video.html
+
+**What was seen**, on macOS (ARM64), host-native, on 2026-11-21:
+
+- **`./emu verify rdke-video` passes**, in ten starts of ten: the page is
+  started over the user interface with `org.rdk.RDKShell`'s launch, the
+  player's time moves, the launcher's window shows the stream's picture full
+  screen with its marker blocks in the stream's colours, and the stream's
+  880 Hz tone reaches the host-side sound process and the host's output
+  device (played at volume 0 for the check). Two of the ten took longer than
+  the others (49 s and 120 s, against 34 s); why was not looked at.
+- The same was seen with WebKit built with GStreamer's GL path, in six
+  starts of six, up to the host's output device, which took no sound at the
+  time.
+- Pausing and resuming the sound card's output directly (ALSA, without the
+  browser) works, on the plain device and through the soft volume control.
+
+**Found, and open:**
+
+- *The user interface's own video row does not play.* A card of "Featured
+  Video on Demand" ends in "AAMPMediaPlayer is not defined": the interface
+  plays those streams with RDK's adaptive player (AAMP) through bindings in
+  the browser, and neither is in the image (RDK-E's configuration takes AAMP
+  out with the browser, and the plug-in is built here without the bindings).
+- *The device starts at three quarters of its volume.* The sound card's soft
+  volume control is at 75 % after boot (about 13 dB down), while RDK's
+  display settings service reports 100. Setting the volume through that
+  service puts the control where the service says.
+- *Thunder ends with a segmentation fault when one display is taken away
+  and another made at once.* The check first stopped the user interface
+  (`systemctl stop tvemu-refui`) and started the page with
+  `tvemu-app-start`; in about three starts of ten Thunder (`WPEFramework`)
+  then ended on signal 11 in Westeros' refresh thread (`wstVRefresh`), and
+  systemd does not start it again. It was not seen when an application is
+  started over the running user interface, which is what the check does
+  now. The cause was not looked for.
+- *Looping video*, as above: a page that sets `loop` on a video sees it stop.
+  Later WebKit and GStreamer versions were not looked at for a repair.
+- *A host output device that takes no sound.* The host-side sound process
+  now keeps at most a second of sound waiting for the host's player and
+  drops what is older, so that the target is not stopped by it; before, the
+  VM stood still with the device.
+- *Not tried:* adaptive streams (HLS, DASH) and Media Source Extensions in
+  the browser, the other codecs, protected content, video at 1080p, and a
+  simulated CPU.
+
 ## Starting an image
 
     ./emu run --mode vm --rootfs rdke [--window]
@@ -650,7 +751,7 @@ That shows that the definition is consistent with RDK-E's common layers.
 That it builds and boots is shown by the minimal image above, with the
 64-bit userland only.
 
-    ./emu verify rootfs-option rdke-browser rdke-launcher
+    ./emu verify rootfs-option rdke-browser rdke-launcher rdke-video
 
 `rootfs-option` boots whatever image is in `build/rdke/arm64` to its own
 init. `rdke-browser` needs `tvemu-browser-image` there: it shows the image's
@@ -662,6 +763,11 @@ for a card, and ends it with the EXIT key. On a host without the image, or
 with another image, both end as unavailable. Westeros alone, the
 middleware's device interfaces and the user interface's own screens are not
 covered by a check.
+
+`rdke-video` needs the same image too: RDK's browser plays the image's
+reference stream, the launcher's window shows its picture, and its tone
+reaches the host-side sound process and the host's output device (see
+"Video and sound" for what was seen).
 
 ## What is open
 
@@ -692,8 +798,8 @@ covered by a check.
    the application managers.
 5. **The launcher's side, in part.** `./emu run --mode vm --rootfs rdke`
    boots an image from `build/rdke/arm64`, and the remote control's keys
-   reach it (`rdke-browser` checks that). Sound is not connected, and
-   captures (`--screenshot`) are refused.
+   reach it (`rdke-browser` checks that), and the target's sound is played
+   through the host (`rdke-video`). Captures (`--screenshot`) are refused.
 6. **RDK's own virtual device.** RDK's build scripts mention a "vdevice"
    product layer (build-scripts, pull request 30, June 2026). No public
    repository of it was found on 2026-11-20. If one is published, it may be

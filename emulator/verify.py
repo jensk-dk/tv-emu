@@ -2783,12 +2783,14 @@ def _rdke_page_drawn(viewer, seen, seconds):
         return bool(_wait(picture, seconds, 1))
 
 
-def _rdke_session(body):
+def _rdke_session(body, options=None, on_audio=None):
     """Starts the RDK-E image of this host with the launcher's window, waits
     for its shell, and has `body(viewer, typed, answer, seen, console, lock,
     slow)` do a check's work in it: `typed` types a line on the console,
     `answer` waits for a console line, and `seen` takes what the check found.
-    Returns `seen`, the kind of guest, and what the image is."""
+    The target's sound is taken in without being played on the host unless
+    `options` say where it goes. Returns `seen` (with the run's outcome as
+    "outcome"), the kind of guest, and what the image is."""
     from . import rootfs
     present, said = rootfs.rdke_state()
     if not present:
@@ -2857,8 +2859,10 @@ def _rdke_session(body):
 
     with os.fdopen(reader, "rb", buffering=0) as source:
         outcome = launch(RunOptions(mode="vm", arch=arch, rootfs=rootfs.RDKE, window=True, echo=False,
-                                    stdin_script=source, on_line=on_line, on_viewer=drive,
-                                    options={"verbose-boot": "no"}, timeout=1200 * slow))
+                                    stdin_script=source, on_line=on_line, on_viewer=drive, on_audio=on_audio,
+                                    options=dict(options or {"audio-output": "none"}, **{"verbose-boot": "no"}),
+                                    timeout=1200 * slow))
+    seen["outcome"] = outcome
     if "unavailable" in seen:
         raise CheckUnavailable(seen["unavailable"])
     _require("error" not in seen, seen.get("error"))
@@ -2877,7 +2881,8 @@ def check_rdke_browser():
         started = answer(r"tvemu-started-\d+", 300)
         if started != "tvemu-started-0":
             with lock:
-                seen["error"] = "the page was not shown (%s): %s" % (started, " | ".join(console[-6:]))
+                seen["error"] = "the page was not shown (%s): %s" % (started, " | ".join(
+                    [line.strip() for line in console if line.startswith("tvemu-app-start: ")] or console[-6:]))
             return
         with lock:
             seen["start"] = next((line.strip() for line in console if line.startswith("tvemu-app-start: ")), "")
@@ -2999,6 +3004,146 @@ def check_rdke_launcher():
             % ("" if seen["presses"] == 1 else ", pressed %d times before it was taken," % seen["presses"])]
 
 
+# The reference stream in the RDK-E image (rdke/meta-tvemu-rdke, tvemu-media): the H.264 and AAC
+# stream of target/media/build-media.sh, its marker block's colour and its tone.
+RDKE_VIDEO_PAGE = "file:///usr/share/tvemu/media/video.html"
+RDKE_VIDEO_SIZE = "1280x720"
+RDKE_VIDEO_MARKER = (0, 200, 255)
+RDKE_VIDEO_TONE = 880
+
+
+def check_rdke_video():
+    """Video and sound in an RDK-E image, as a person at the launcher's window
+    has them: RDK's browser plays an H.264 stream with AAC sound, its picture
+    reaches the window and its sound reaches the host."""
+    sink = _HostSink()
+
+    def body(viewer, typed, answer, seen, console, lock, slow):
+        typed("test -e /usr/share/tvemu/media/video.html; echo tvemu-media-$?")
+        if answer(r"tvemu-media-\d+", 30) != "tvemu-media-0":
+            seen["unavailable"] = "the RDK-E image on this host has no reference stream (tvemu-media)"
+            return
+        typed("S() { curl -s -m 60 -d \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":1,\\\"method\\\":"
+              "\\\"$1\\\"${2:+,\\\"params\\\":$2}}\" http://127.0.0.1:9998/jsonrpc; }")
+
+        def asked(name, command, pattern=r"\d+", seconds=30):
+            marker = "tvemu-%s=" % name
+            with lock:
+                del console[:]
+            typed("echo %s$(%s)" % (marker, command))
+            return (answer(re.escape(marker) + pattern, seconds) or "=").split("=", 1)[1]
+
+        typed("cat /proc/asound/cards | head -n 1")
+        seen["card"] = (answer(r"\d+ \[.*", 30) or "").strip()
+        # The page is started as the image's user interface starts an application, over that user
+        # interface: with org.rdk.RDKShell's launch, when the user interface has the display and its
+        # keys. (Stopping the user interface and making a display for the page at once ended Thunder
+        # with a segmentation fault in Westeros' refresh thread in about three starts of ten.) The
+        # volume is the device's, set as RDK's services set it: a device starts below full volume.
+        ready = _wait(lambda: asked("ui", "systemctl is-active tvemu-refui | grep -c '^active'") == "1" and
+                      asked("keys", "journalctl -b --no-pager | grep -c 'TvemuRDKShell: key intercepts for "
+                            "residentapp: done' | grep -c '^[1-9]'") == "1", 300 * slow, 2)
+        if not ready:
+            seen["error"] = "the user interface did not start and ask for its keys in %d s" % (300 * slow)
+            return
+        time.sleep(3 * slow)
+        seen["volume"] = bool(_wait(lambda: asked(
+            "volume", "S org.rdk.DisplaySettings.1.setVolumeLevel '{\"audioPort\":\"HDMI0\",\"volumeLevel\":100}'"
+            " | grep -c '\"success\":true'") == "1", 120 * slow, 2))
+        started = asked("launch", "S org.rdk.RDKShell.1.launch '{\"callsign\":\"HtmlApp\",\"type\":\"HtmlApp\","
+                        "\"uri\":\"%s\"}' | grep -c '\"success\":true'" % RDKE_VIDEO_PAGE, seconds=180)
+        if started != "1":
+            # What became of Thunder: its process, and what the system's log says of its service and
+            # of processes that ended on a signal.
+            with lock:
+                del console[:]
+            typed("echo tvemu-thunder=$(pidof WPEFramework); journalctl -b --no-pager | grep -E "
+                  "'wpeframework.service|sig=[0-9]+|dumped core|Failed with result' | tail -n 6; echo tvemu-log-end")
+            answer(r"tvemu-log-end", 30)
+            with lock:
+                log = [line.strip()[:220] for line in console
+                       if ("tvemu-thunder=" in line and "echo" not in line) or "wpeframework.service" in line
+                       or "sig=" in line or "dumped core" in line]
+            seen["error"] = "org.rdk.RDKShell's launch did not start the page; the system's log: %s" \
+                            % (" | ".join(log) or "nothing")
+            return
+
+        def said():
+            """What the page's address says of the player: state, picture size, tenths of a second, error."""
+            found = asked("player", "S HtmlApp.1.url | sed -n 's/.*video.html#\\([^\"]*\\)\".*/\\1/p'",
+                          r"[\w:.-]*", 15)
+            seen["player"] = found
+            parts = found.split("-")
+            return parts if len(parts) == 4 else None
+        seen["playing"] = bool(_wait(lambda: (lambda p: p and p[0] == "playing" and p[1] == RDKE_VIDEO_SIZE)(said()),
+                                     120 * slow, 1))
+        if not seen["playing"]:
+            return
+        with tempfile.TemporaryDirectory(prefix="emu-verify-") as directory:
+            path = os.path.join(directory, "display.ppm")
+
+            def problems():
+                if not viewer.ask(do="save-display", path=path).get("saved"):
+                    return ["the window gave no picture of the display"]
+                size = imagefile.size(path)
+                seen["size"] = size
+                entry = {"file": path, "captured_width": size[0], "captured_height": size[1],
+                         "marker": RDKE_VIDEO_MARKER}
+                return graphics.capture_problems(entry, size[0], size[1], tolerance=graphics.VIDEO_COLOR_TOLERANCE)
+            seen["picture"] = ["not looked at"]
+
+            def shown():
+                seen["picture"] = problems()
+                return not seen["picture"]
+            _wait(shown, 60 * slow, 1)
+        # The stream is five seconds long and is played again and again: the player's time is seen to
+        # move, and there is sound for a while.
+        times = []
+        for _ in range(8):
+            now = said()
+            if now and now[2].isdigit():
+                times.append(int(now[2]))
+            time.sleep(1.0 * slow)
+        seen["times"] = times
+        typed("cat /proc/asound/card0/pcm0p/sub0/status | head -n 1")
+        seen["pcm"] = (answer(r"(state: \w+|closed)", 30) or "").strip()
+        seen["cpu"] = asked("cpu", "top -b -n 1 | awk '$NF ~ /WPE/ {s += $9} END {printf \"%d\", s}'")
+
+    try:
+        seen, kind, said_image = _rdke_session(body, options=sink.options(), on_audio=sink.watch)
+    finally:
+        heard = sink.close()
+    outcome = seen["outcome"]
+    _require(seen.get("card"), "the target has no sound card")
+    _require(seen.get("volume"), "RDK's display settings service did not set the volume")
+    _require(seen.get("playing"), "the browser did not play the stream at %s: the page's player says %r"
+             % (RDKE_VIDEO_SIZE, seen.get("player")))
+    _require(seen.get("picture") == [], "the display does not show the stream's picture: %s"
+             % "; ".join(seen.get("picture") or []))
+    moved = len(set(seen.get("times") or []))
+    _require(moved >= 4, "the player's time did not move: %r" % seen.get("times"))
+    received = [(row["level"], row["hz"]) for row in _trace(outcome)]
+    _require(_tone_windows(received, RDKE_VIDEO_TONE) >= 20, "the host-side process did not receive the stream's "
+             "%d Hz tone from the target's sound card (%d of %d tenths of a second hold it; the card's output was "
+             "%r)" % (RDKE_VIDEO_TONE, _tone_windows(received, RDKE_VIDEO_TONE), len(received), seen.get("pcm")))
+    audio = outcome.environment["emulator"].get("audio") or {}
+    lines = ["the RDK-E image (%s) started in a %s guest, and RDK's browser plug-in HtmlApp (WPE WebKit) played "
+             "the image's H.264 and AAC reference stream from a page: its player reports it playing at %s, with "
+             "its time moving" % (said_image, kind, RDKE_VIDEO_SIZE),
+             "the launcher's window got the stream's picture, full screen at %dx%d: its four corner blocks and its "
+             "marker block have the stream's colours; decoding and drawing are done on the target's CPU, with the "
+             "browser's processes at %s%% of one CPU" % (tuple(seen["size"]) + (seen.get("cpu") or "?",)),
+             "the stream's %d Hz tone reached the host-side process in %d tenths of a second; path: target sound "
+             "card (%s) -> %s" % (RDKE_VIDEO_TONE, _tone_windows(received, RDKE_VIDEO_TONE), seen["card"],
+                                  audio.get("path"))]
+    if not sink.name:
+        raise CheckUnavailable("\n".join(lines + [sink.reason]))
+    _require(_tone_windows(heard, RDKE_VIDEO_TONE) >= 20, "the stream's %d Hz tone was not played on the host's "
+             "output device" % RDKE_VIDEO_TONE)
+    lines.append("the tone was recorded at %s" % sink.where)
+    return lines + sink.evidence()
+
+
 def _command_checks():
     return {
         "rootfs-option": (check_rootfs_option, "9.4", "--rootfs chooses the Debian or the RDK-E root file system"),
@@ -3006,6 +3151,8 @@ def _command_checks():
                                                     "remote control's keys"),
         "rdke-launcher": (check_rdke_launcher, "9.4", "RDK's user interface can start an application in an RDK-E "
                                                       "image, and the EXIT key ends it"),
+        "rdke-video": (check_rdke_video, "9.4", "RDK's browser plays video with sound in an RDK-E image, and both "
+                                                "reach the host"),
         "doctor": (check_doctor, "9.2", "the launcher shows what it finds on the host, and names what is missing"),
         "report-serve": (check_report_serve, "9.2", "the results command serves the page and all that it reads"),
         "report-page": (check_report_page, "9.2", "the results page shows every record and its sections"),

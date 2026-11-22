@@ -27,6 +27,7 @@ its level as it arrived and as it was sent on, its pitch, and whether the
 emulator was muted. Tests read that to see what the target played.
 """
 import array
+import collections
 import json
 import math
 import os
@@ -42,6 +43,7 @@ CHANNELS = 2
 FRAME_BYTES = 4
 HELLO = b"EMU-PCM s16le 48000 2\n"
 WINDOW_BYTES = RATE // 10 * FRAME_BYTES       # the trace's time step
+PLAYER_BACKLOG_BYTES = RATE * FRAME_BYTES     # what may wait for the player: a second of sound
 SILENT_RMS = 20.0                           # below this a window counts as silence
 
 # Player programs by host, in order of preference. Each plays raw samples
@@ -143,6 +145,16 @@ class Output:
         self._window = b""
         self._window_out = b""
         self._started = time.monotonic()
+        # What waits for the player. The emulator is never made to wait for
+        # it: an emulator that waits here stops its target, and a player
+        # takes some tenths of a second to start its output device.
+        self._waiting = collections.deque()
+        self._waiting_bytes = 0
+        self.dropped_bytes = 0      # not given to the player: it was more than a second behind
+        self._more = threading.Condition()
+        self._ending = False
+        self._writer = threading.Thread(target=self._feed_player, daemon=True)
+        self._writer.start()
 
     def _player(self):
         if self._command and (self._process is None or self._process.poll() is not None):
@@ -164,13 +176,15 @@ class Output:
                 self.muted_bytes += len(data)
             else:
                 self.played_bytes += len(data)
-            player = self._player()
-            if player:
-                try:
-                    player.stdin.write(out)
-                    player.stdin.flush()
-                except (OSError, ValueError):
-                    pass        # the player ended; the next block restarts it
+            if self._command:
+                with self._more:
+                    self._waiting.append(out)
+                    self._waiting_bytes += len(out)
+                    while self._waiting_bytes > PLAYER_BACKLOG_BYTES and len(self._waiting) > 1:
+                        late = self._waiting.popleft()
+                        self._waiting_bytes -= len(late)
+                        self.dropped_bytes += len(late)
+                    self._more.notify()
             if self._trace:
                 self._window += data
                 self._window_out += out
@@ -178,6 +192,24 @@ class Output:
                     self._log(self._window[:WINDOW_BYTES], self._window_out[:WINDOW_BYTES])
                     self._window = self._window[WINDOW_BYTES:]
                     self._window_out = self._window_out[WINDOW_BYTES:]
+
+    def _feed_player(self):
+        """Gives the player what waits for it, at the player's pace."""
+        while True:
+            with self._more:
+                while not self._waiting and not self._ending:
+                    self._more.wait()
+                if not self._waiting:
+                    return
+                out = self._waiting.popleft()
+                self._waiting_bytes -= len(out)
+            player = self._player()
+            if player:
+                try:
+                    player.stdin.write(out)
+                    player.stdin.flush()
+                except (OSError, ValueError):
+                    pass        # the player ended; the next block restarts it
 
     def _log(self, block, block_out):
         level, pitch = measure(block)
@@ -198,9 +230,14 @@ class Output:
             return {"muted": self.muted, "streams": self.streams, "player": self.player,
                     "player_pid": self._process.pid if running else None,
                     "player_error": self.player_error, "received_seconds": seconds(self.received_bytes),
-                    "played_seconds": seconds(self.played_bytes), "muted_seconds": seconds(self.muted_bytes)}
+                    "played_seconds": seconds(self.played_bytes), "muted_seconds": seconds(self.muted_bytes),
+                    "dropped_seconds": seconds(self.dropped_bytes)}
 
     def close(self):
+        with self._more:
+            self._ending = True
+            self._more.notify()
+        self._writer.join(timeout=3)
         with self._lock:
             if self._process and self._process.poll() is None:
                 try:

@@ -23,6 +23,7 @@ if [ "${1:-}" = --middleware ]; then
   layers_kind=middleware
   shift
   fetch_middleware
+  fetch_media
 fi
 userland=${1:-64}
 [ $# -gt 0 ] && shift
