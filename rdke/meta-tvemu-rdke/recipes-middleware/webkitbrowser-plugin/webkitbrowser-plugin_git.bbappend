@@ -1,5 +1,4 @@
-# The browser plug-in's bindings for AAMP, RDK's player for HLS and DASH, need
-# AAMP built, and AAMP's build misses a library here (libbaseconversion, of
-# RDK's player interface). The player is left for later; the browser does not
-# need it to show pages or to play media itself.
-PACKAGECONFIG:remove:tvemu = "aampjsbindings"
+# The plug-in is built with its bindings for AAMP, RDK's player for HLS and
+# DASH (the recipe's default). They were left out here while AAMP did not
+# build; recipes-middleware/aamp and recipes-middleware/player-interface say
+# what it took. The reference user interface plays its video with them.

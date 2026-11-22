@@ -129,11 +129,11 @@
       "task": "3.1",
       "description": "ARM32 VM guest mode starts the target OS workload",
       "details": [
-        "armv7l guest on tcg simulating cortex-a15 (CPU part 0xc0f) booted in 18.2s and ran the prompt workload"
+        "armv7l guest on tcg simulating cortex-a15 (CPU part 0xc0f) booted in 20.5s and ran the prompt workload"
       ],
-      "checked_at": "2026-11-22T10:58:13Z",
-      "seconds": 19.1,
-      "revision": "e68c04da2aef74a9fdbd0b25b13069a3d0593336-dirty",
+      "checked_at": "2026-11-22T13:30:48Z",
+      "seconds": 22.9,
+      "revision": "f8c3c0d1a97967ed7d03868fb165b17991944139",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     },
     "vm-arm64": {
@@ -143,9 +143,9 @@
       "details": [
         "aarch64 guest on tcg simulating cortex-a53 (CPU part 0xd03) booted in 4.8s and ran the prompt workload"
       ],
-      "checked_at": "2026-11-22T10:57:54Z",
+      "checked_at": "2026-11-22T13:30:25Z",
       "seconds": 5.5,
-      "revision": "e68c04da2aef74a9fdbd0b25b13069a3d0593336-dirty",
+      "revision": "f8c3c0d1a97967ed7d03868fb165b17991944139",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     },
     "drivers-container": {
@@ -594,9 +594,9 @@
         "host output device: Astro A50 Game, at volume 0; it played for 31.8 s by its own clock, 14.4 s of that the target's sound",
         "the host's audio server reported the player process as playing on: Astro A50 Game"
       ],
-      "checked_at": "2026-11-22T10:57:45Z",
+      "checked_at": "2026-11-22T13:30:16Z",
       "seconds": 33.0,
-      "revision": "e68c04da2aef74a9fdbd0b25b13069a3d0593336-dirty",
+      "revision": "f8c3c0d1a97967ed7d03868fb165b17991944139",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     },
     "audio-mute-container": {
@@ -1937,9 +1937,9 @@
         "it has the hosts, the support matrix with the list of known issues, 47 charts, and 3 tables of disk space and times",
         "not checked: choosing the hosts, relative values, and what pointing at a row or a cell shows"
       ],
-      "checked_at": "2026-11-22T10:57:48Z",
-      "seconds": 1.0,
-      "revision": "e68c04da2aef74a9fdbd0b25b13069a3d0593336-dirty",
+      "checked_at": "2026-11-22T13:30:20Z",
+      "seconds": 0.9,
+      "revision": "f8c3c0d1a97967ed7d03868fb165b17991944139",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     },
     "setup-check": {
@@ -2166,9 +2166,9 @@
         "a stand-in (the ARM64 Debian VM image, started with --rootfs rdke as an RDK-E image would be) booted its kernel and its own init in 1s, in a host-native guest",
         "the image built for the machine tvemu-arm64-rdke (Image and rootfs.ext4 in build/rdke/arm64) booted its kernel and its own init in 2s, in a host-native guest: a minimal image on RDK-E's base layers, without its middleware"
       ],
-      "checked_at": "2026-11-22T10:57:47Z",
-      "seconds": 2.5,
-      "revision": "e68c04da2aef74a9fdbd0b25b13069a3d0593336-dirty",
+      "checked_at": "2026-11-22T13:30:19Z",
+      "seconds": 2.4,
+      "revision": "f8c3c0d1a97967ed7d03868fb165b17991944139",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     },
     "rdke-browser": {
@@ -2180,9 +2180,9 @@
         "the launcher's window got the page's picture at 1920x1080: its red corner blocks and its background are where the page draws them; the plug-in reports 31 frames a second",
         "13 remote control keys sent from the window arrived in the page, each with a web page's name and code for it: ok as Enter, up as ArrowUp, down as ArrowDown, left as ArrowLeft, right as ArrowRight, back as Backspace, 1 as 1, play as MediaPlay, red as ColorF0Red, green as ColorF1Green, yellow as ColorF2Yellow, blue as ColorF3Blue, exit as Escape"
       ],
-      "checked_at": "2026-11-22T10:56:29Z",
-      "seconds": 33.2,
-      "revision": "e68c04da2aef74a9fdbd0b25b13069a3d0593336-dirty",
+      "checked_at": "2026-11-22T13:29:15Z",
+      "seconds": 28.3,
+      "revision": "f8c3c0d1a97967ed7d03868fb165b17991944139",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     },
     "rdke-launcher": {
@@ -2192,11 +2192,11 @@
       "details": [
         "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest with RDK's reference user interface, and a call of org.rdk.RDKShell's launch, as that user interface makes it, started the browser plug-in HtmlApp with the image's page: the launcher's window got the page's picture at 1920x1080",
         "the image's stand-in answered the call (RDK-E's middleware has org.rdk.RDKWindowManager in its place) and names the application as resumed; the OK key arrived in the application",
-        "the EXIT key, pressed 2 times before it was taken, went to the user interface, which ended the application: it is no longer in org.rdk.RDKShell's getState, its page is off the display, and the user interface has its display"
+        "the EXIT key went to the user interface, which ended the application: it is no longer in org.rdk.RDKShell's getState, its page is off the display, and the user interface has its display"
       ],
-      "checked_at": "2026-11-22T10:57:11Z",
-      "seconds": 42.8,
-      "revision": "e68c04da2aef74a9fdbd0b25b13069a3d0593336-dirty",
+      "checked_at": "2026-11-22T13:29:43Z",
+      "seconds": 28.0,
+      "revision": "f8c3c0d1a97967ed7d03868fb165b17991944139",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     },
     "rdke-video": {
@@ -2205,15 +2205,15 @@
       "description": "RDK's browser plays video with sound in an RDK-E image, and both reach the host",
       "details": [
         "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest, and RDK's browser plug-in HtmlApp (WPE WebKit) played the image's H.264 and AAC reference stream from a page: its player reports it playing at 1280x720, with its time moving",
-        "the launcher's window got the stream's picture, full screen at 1920x1080: its four corner blocks and its marker block have the stream's colours; decoding and drawing are done on the target's CPU, with the browser's processes at 253% of one CPU",
-        "the stream's 880 Hz tone reached the host-side process in 114 tenths of a second; path: target sound card (0 [SoundCard      ]: virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe",
+        "the launcher's window got the stream's picture, full screen at 1920x1080: its four corner blocks and its marker block have the stream's colours; decoding and drawing are done on the target's CPU, with the browser's processes at 250% of one CPU",
+        "the stream's 880 Hz tone reached the host-side process in 113 tenths of a second; path: target sound card (0 [SoundCard      ]: virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe",
         "the tone was recorded at the host's audio output",
         "host output device: Astro A50 Game, at volume 0; it played for 18.0 s by its own clock, 12.6 s of that the target's sound",
         "the host's audio server reported the player process as playing on: Astro A50 Game"
       ],
-      "checked_at": "2026-11-22T10:55:55Z",
-      "seconds": 34.5,
-      "revision": "e68c04da2aef74a9fdbd0b25b13069a3d0593336-dirty",
+      "checked_at": "2026-11-22T13:28:47Z",
+      "seconds": 34.4,
+      "revision": "f8c3c0d1a97967ed7d03868fb165b17991944139",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     }
   }

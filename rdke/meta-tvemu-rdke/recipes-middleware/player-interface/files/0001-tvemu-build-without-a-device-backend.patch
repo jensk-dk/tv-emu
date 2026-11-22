@@ -1,0 +1,43 @@
+The player interface reaches the device (its display, its sound outputs) through
+RDK's Firebolt SDK for AAMP or through IARM, and both ways need the library
+FireboltAamp, which RDK-E's public layers do not have. This adds a third way
+for a device: the one the source already has for a build on a desktop, which
+asks the device nothing. CMAKE_NO_DEVICE_BACKEND chooses it.
+
+Upstream-Status: Inappropriate [tvemu: no FireboltAamp in the public layers]
+
+diff --git a/externals/CMakeLists.txt b/externals/CMakeLists.txt
+index 467a1364..b584bbeb 100644
+--- a/externals/CMakeLists.txt
++++ b/externals/CMakeLists.txt
+@@ -51,7 +51,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/rdk)
+ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/contentsecuritymanager)
+ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/contentsecuritymanager/IFirebolt)
+-if(NOT CMAKE_USE_FIREBOLT AND NOT CMAKE_PLATFORM_UBUNTU AND NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
++if(NOT CMAKE_USE_FIREBOLT AND NOT CMAKE_NO_DEVICE_BACKEND AND NOT CMAKE_PLATFORM_UBUNTU AND NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+     include_directories(${CMAKE_CURRENT_SOURCE_DIR}/rdk/IIarm)
+ endif()
+ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/rdk/IFirebolt)
+@@ -138,7 +138,7 @@ if(CMAKE_USE_FIREBOLT)
+     set(EXT_SOURCES "${EXT_SOURCES}" rdk/PlayerExternalsRdkInterface.cpp)
+     set(EXT_SOURCES "${EXT_SOURCES}" rdk/IFirebolt/DeviceFireboltInterface.cpp)
+     set(EXT_SOURCES "${EXT_SOURCES}" IFirebolt/FireboltInterface.cpp)
+-elseif(CMAKE_PLATFORM_UBUNTU OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
++elseif(CMAKE_NO_DEVICE_BACKEND OR CMAKE_PLATFORM_UBUNTU OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+     # Native builds: use fake externals implementation (no IARM headers/libs).
+     message("Native build detected - skipping IARM/DeviceSettings backend in externals")
+ else()
+diff --git a/gst-plugins/CMakeLists.txt b/gst-plugins/CMakeLists.txt
+index 3074a13c..da74a743 100755
+--- a/gst-plugins/CMakeLists.txt
++++ b/gst-plugins/CMakeLists.txt
+@@ -66,7 +66,7 @@ endif()
+ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-multichar")
+ 
+ 
+-if(NOT CMAKE_USE_FIREBOLT AND NOT CMAKE_PLATFORM_UBUNTU AND NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
++if(NOT CMAKE_USE_FIREBOLT AND NOT CMAKE_NO_DEVICE_BACKEND AND NOT CMAKE_PLATFORM_UBUNTU AND NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+ 	message("Enabling IARM_MGR")
+ 
+ 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DIARM_MGR")

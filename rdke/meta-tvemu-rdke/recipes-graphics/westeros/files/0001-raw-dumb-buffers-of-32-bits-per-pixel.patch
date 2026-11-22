@@ -1,0 +1,53 @@
+The sink copies a decoded frame into dumb buffers of the DRM device, one byte
+per pixel. virtio-gpu makes dumb buffers of 32 bits per pixel only, so the
+request failed there, and the sink then wrote the frame to an address that was
+not mapped (a segmentation fault in the stream's thread). With
+WST_DUMB_BYTES_PER_PIXEL=4 the same bytes are asked for as a 32-bit buffer.
+
+Upstream-Status: Pending
+
+diff --git a/raw/westeros-sink-soc.c b/raw/westeros-sink-soc.c
+index 682ca3d..6e76d72 100644
+--- a/raw/westeros-sink-soc.c
++++ b/raw/westeros-sink-soc.c
+@@ -3472,6 +3472,13 @@ static void wstBuildSinkCaps( GstWesterosSinkClass *klass )
+    }
+ }
+ 
++/* A DRM driver may make dumb buffers of 32 bits per pixel only (virtio-gpu).
++   A plane of bytes is then asked for as a buffer a quarter as wide: the
++   width is a multiple of 64, and the pitch and the size in bytes are the same. */
++#ifndef WST_DUMB_BYTES_PER_PIXEL
++#define WST_DUMB_BYTES_PER_PIXEL 1
++#endif
++
+ #define DEFAULT_DRM_NAME "/dev/dri/card0"
+ 
+ static bool drmInit( GstWesterosSink *sink )
+@@ -3545,12 +3552,12 @@ static bool drmAllocBuffer( GstWesterosSink *sink, int buffIndex, int width, int
+       width= ((width+63)&~63);
+ 
+       memset( &createDumb, 0, sizeof(createDumb) );
+-      createDumb.width= width;
++      createDumb.width= width/WST_DUMB_BYTES_PER_PIXEL;
+       createDumb.height= height;
+       #ifdef USE_SINGLE_BUFFER_NV12
+       createDumb.height += height/2;
+       #endif
+-      createDumb.bpp= 8;
++      createDumb.bpp= 8*WST_DUMB_BYTES_PER_PIXEL;
+       rc= ioctl( sink->soc.drmFd, DRM_IOCTL_MODE_CREATE_DUMB, &createDumb );
+       if ( rc )
+       {
+@@ -3581,9 +3588,9 @@ static bool drmAllocBuffer( GstWesterosSink *sink, int buffIndex, int width, int
+       drmBuff->fd[1]= -1;
+       #else
+       memset( &createDumb, 0, sizeof(createDumb) );
+-      createDumb.width= width;
++      createDumb.width= width/WST_DUMB_BYTES_PER_PIXEL;
+       createDumb.height= height/2;
+-      createDumb.bpp= 8;
++      createDumb.bpp= 8*WST_DUMB_BYTES_PER_PIXEL;
+       rc= ioctl( sink->soc.drmFd, DRM_IOCTL_MODE_CREATE_DUMB, &createDumb );
+       if ( rc )
+       {

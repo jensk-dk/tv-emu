@@ -19,6 +19,8 @@ IMAGE_INSTALL:append = " \
     tvemu-browser-page \
     tvemu-rdkshell \
     tvemu-media \
+    aamp \
+    westeros-sink \
     gstreamer1.0-libav \
     alsa-utils-aplay alsa-utils-amixer alsa-utils-speakertest \
     "

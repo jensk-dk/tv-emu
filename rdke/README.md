@@ -537,8 +537,8 @@ four colour keys, whose Linux codes the window manager does not know.
   Raspberry Pi 4's CPU has no BTI and does not show this. The layer builds
   WebKit without the option.
 - *RDK's player (AAMP).* The plug-in's bindings for it need AAMP built, and
-  AAMP's build misses a library here. The bindings are left out; the browser
-  plays media itself without them.
+  AAMP did not build here. The bindings were left out at first; "Video and
+  sound" says what it took to have them.
 
 WebKit is also the one thing here that a container engine with 8 GB cannot
 build as it is: a single source file took 5.4 GB to compile. The build ran
@@ -663,6 +663,44 @@ Debian target's build does; it is not kept in the repository.
 
     tvemu-app-start HtmlApp file:///usr/share/tvemu/media/video.html
 
+**The user interface plays its video with RDK's player (AAMP), and five
+things kept that from working.** A card of "Featured Video on Demand" ended
+in "AAMPMediaPlayer is not defined". The interface plays those streams (HLS,
+from public test servers) with AAMP through bindings in the browser.
+
+- *AAMP was not built.* RDK-E's configuration for bolt apps
+  (`rdke-rdkm-config.inc`) takes the features `webkitbrowser-plugin` and
+  `build_external_player_interface` away, and with them AAMP's bindings and
+  the library AAMP is linked against (the player interface). The layer names
+  both for AAMP again.
+- *The player interface needs a library that the public layers do not have.*
+  As RDK-E builds it, it reaches the device through RDK's Firebolt SDK for
+  AAMP (`FireboltAamp`); RDK-E's configuration leaves the library out "until
+  RDKMVE-2474 gets resolved". Here it is built as its source builds it on a
+  desktop, with a patch that offers that way to a device build: it asks the
+  device nothing about its display and outputs, so nothing that depends on
+  the answer (content protection by output, for one) is there.
+- *There was no video sink.* The Pi's environment for Thunder tells AAMP to
+  use `westerossink`, a device's sink that decodes in hardware. The VM
+  decodes with FFmpeg, so the layer builds the variant of the same sink that
+  takes decoded frames (`westerosrawsink`, recipe `westeros-sink`), and
+  AAMP's pipeline finds it by its rank. That sink asked the DRM device for
+  buffers of one byte per pixel; virtio-gpu makes buffers of 32 bits per
+  pixel only, the request failed, and the sink wrote the frame to an address
+  that was not mapped, which ended the browser's web process. A patch asks
+  for the same bytes as a 32-bit buffer.
+- *The picture was black.* Westeros took the sink's two buffers (brightness,
+  colour) as one two-plane image, which Mesa's `llvmpipe` draws black. With
+  OpenGL ES's external images hidden from Thunder's process
+  (`MESA_EXTENSION_OVERRIDE`), Westeros takes each buffer as an image of its
+  own and converts the colours itself.
+- *AAMP chose a Dolby sound track.* The image has no decoder for one, and
+  the pipeline ended with "missing a plug-in". AAMP is told that the device
+  has none (`AAMP_CFG_TEXT`), and takes the stream's AAC track.
+
+AAMP's own build also stopped on a size printed with `%d`, which is an error
+only in a 64-bit build.
+
 **What was seen**, on macOS (ARM64), host-native, on 2026-11-21:
 
 - **`./emu verify rdke-video` passes**, in ten starts of ten: the page is
@@ -678,13 +716,32 @@ Debian target's build does; it is not kept in the repository.
 - Pausing and resuming the sound card's output directly (ALSA, without the
   browser) works, on the plain device and through the soft volume control.
 
+And on 2026-11-22, by hand (the remote control's keys sent to the launcher's
+window, captures of the window, the sound that reached the host-side sound
+process):
+
+- The first card of "Featured Video on Demand" plays Apple's HLS test
+  stream: the stream's own clock in the picture went from 19.13 s to 27.00 s
+  between two captures taken about 8 s apart, and the stream's tones reached
+  the host-side sound process.
+- The second card plays its stream at 1920x1080. BACK returns to the user
+  interface, and the card plays again when started again.
+- The browser's web process did not end in these runs.
+- `./emu verify rdke-video rdke-browser rdke-launcher audio-host-vm` pass on
+  the image with these changes, once each.
+
 **Found, and open:**
 
-- *The user interface's own video row does not play.* A card of "Featured
-  Video on Demand" ends in "AAMPMediaPlayer is not defined": the interface
-  plays those streams with RDK's adaptive player (AAMP) through bindings in
-  the browser, and neither is in the image (RDK-E's configuration takes AAMP
-  out with the browser, and the plug-in is built here without the bindings).
+- *No check plays a stream with AAMP.* What is said of it above was seen by
+  hand. The user interface's streams are on public servers, so a check of
+  them would depend on the network; a stream in the image, in a form AAMP
+  takes (HLS or DASH), is not made yet.
+- *A frame can be shown while it is written.* One capture of 1080p video
+  had a band of another frame at its top. The sink reuses three buffers and
+  Westeros reads them where they are.
+- *Hiding external images is for the whole of Thunder's process*, the
+  browser included. The checks of the browser pass with it. Whether the
+  two-plane image also fails with the host's GPU (virgl) was not tried.
 - *The device starts at three quarters of its volume.* The sound card's soft
   volume control is at 75 % after boot (about 13 dB down), while RDK's
   display settings service reports 100. Setting the volume through that
@@ -703,9 +760,10 @@ Debian target's build does; it is not kept in the repository.
   now keeps at most a second of sound waiting for the host's player and
   drops what is older, so that the target is not stopped by it; before, the
   VM stood still with the device.
-- *Not tried:* adaptive streams (HLS, DASH) and Media Source Extensions in
-  the browser, the other codecs, protected content, video at 1080p, and a
-  simulated CPU.
+- *Not tried:* DASH, and adaptive streams and Media Source Extensions in the
+  browser's own player (HLS was played with AAMP only), the other codecs,
+  Dolby sound, protected content, subtitles, seeking and trick play in AAMP,
+  and a simulated CPU.
 
 ## Starting an image
 
@@ -777,7 +835,7 @@ reaches the host-side sound process and the host's output device (see
    that did not exist: the
    hardware abstraction for device settings, power, deep sleep, HDMI-CEC,
    manufacturer data and others (`...-hal-tvemu`), and Westeros' video
-   sink. A build of the vendor layer
+   sink (now there for decoded frames, see "Video and sound"). A build of the vendor layer
    stops at the first of them. The Pi's `vendor_pkg_versions.inc`, which pins
    the versions of what a vendor layer delivers, is not taken over either.
 2. **The 32-bit userland, and other build hosts.** Everything here is
