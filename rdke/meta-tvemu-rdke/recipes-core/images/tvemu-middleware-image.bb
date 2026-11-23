@@ -59,3 +59,19 @@ override_dropbear_rsakey_dir () {
     fi
 }
 ROOTFS_POSTPROCESS_COMMAND += "update_dropbearkey_to_rw_path; override_dropbear_rsakey_dir; "
+
+# The Bluetooth manager (btmgr.service) is not started. The VM has no
+# Bluetooth controller and its kernel no Bluetooth, so the service ended with
+# "Could not initialize BTRCore/HAL module" and was started again for as long
+# as the VM ran. Its package stays: the Bluetooth plug-in and the remote
+# control manager link against its library. The package's preset is what
+# enables the unit when the image is put together, so the preset is changed
+# as well as the link removed.
+tvemu_no_btmgr_start () {
+    preset="${IMAGE_ROOTFS}${systemd_unitdir}/system-preset/98-bluetooth-mgr.preset"
+    if [ -f "$preset" ]; then
+        echo "disable btmgr.service" > "$preset"
+    fi
+    rm -f ${IMAGE_ROOTFS}${sysconfdir}/systemd/system/multi-user.target.wants/btmgr.service
+}
+ROOTFS_POSTPROCESS_COMMAND += "tvemu_no_btmgr_start; "

@@ -420,6 +420,25 @@ The server takes root without a password, as RDK's development builds do;
 the launcher forwards no port to the VM, so it is reached from inside the VM
 only.
 
+**The Bluetooth manager is not started.** `btmgr.service` ended with "Could
+not initialize BTRCore/HAL module" and was started again for as long as the
+VM ran, with "Failed to start Bluetooth Manager Daemon over IARM IPC" each
+time: the VM has no Bluetooth controller and its kernel no Bluetooth
+("Can't open HCI socket: Address family not supported by protocol"). The
+image no longer enables the unit (`tvemu-middleware-image.bb`; the
+package's systemd preset is changed as well as the link removed, since the
+preset enables the unit again when the image is put together). The package
+stays, for the Bluetooth plug-in and the remote control manager link against
+its library. Run after it on 2026-11-23: the unit is disabled and inactive,
+no unit fails or is started again in a loop, and the plug-in
+`org.rdk.Bluetooth` is still activated; no call to it was tried.
+
+**Still seen at start-up, not looked into** (2026-11-23): the process of the
+XCast plug-in (a `WPEProcess`) ends once with a segmentation fault a few
+seconds after Thunder starts; `dropbear.service` fails its first start in
+some boots and starts at the retry five seconds later; the plug-ins
+`org.rdk.AVOutput` and `org.rdk.UserPreferences` are deactivated.
+
 **What RDK-E's code assumes of 32-bit ARM.** Found by building and running
 it as 64-bit programs; each is handled in this layer, with a comment at the
 place:
