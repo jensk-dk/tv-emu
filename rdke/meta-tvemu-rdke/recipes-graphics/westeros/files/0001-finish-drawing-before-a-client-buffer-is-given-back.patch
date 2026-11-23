@@ -6,7 +6,8 @@ picture into: about one picture in twenty lacked a part (a logo of the user
 interface, patches of a video frame) when RDK's window manager drew 36 times
 a second. Westeros has the cure for one platform (Broadcom Nexus): finish the
 drawing of each surface before going on. WESTEROS_RENDER_FINISH asks for the
-same on a platform without fences.
+same on a platform without fences; WESTEROS_RENDER_NO_FINISH in the
+environment turns it off again, for a renderer that needs no such thing.
 
 Upstream-Status: Pending
 
@@ -14,7 +15,7 @@ diff --git a/westeros-render-embedded.cpp b/westeros-render-embedded.cpp
 index c3ff1ee..0118b96 100644
 --- a/westeros-render-embedded.cpp
 +++ b/westeros-render-embedded.cpp
-@@ -2257,9 +2257,16 @@ static void wstRendererUpdateScene( WstRenderer *renderer )
+@@ -2257,9 +2257,17 @@ static void wstRendererUpdateScene( WstRenderer *renderer )
     glUseProgram( program );
  
     #ifndef ENABLE_LEXPSYNCPROTOCOL
@@ -25,8 +26,9 @@ index c3ff1ee..0118b96 100644
 +      #if defined (WESTEROS_RENDER_FINISH)
 +      /* A client's buffer is read where it is, and is given back to the client
 +         when its next one is committed. Without fences, nothing else keeps the
-+         client from drawing into it again before this drawing has been done. */
-+      static bool needFinish= true;
++         client from drawing into it again before this drawing has been done.
++         WESTEROS_RENDER_NO_FINISH in the environment turns this off. */
++      static bool needFinish= (getenv("WESTEROS_RENDER_NO_FINISH") == NULL);
 +      #else
        static bool needFinish= (getenv("WAYLAND_EGL_BNXS_ZEROCOPY") == NULL);
 +      #endif
@@ -37,7 +39,7 @@ diff --git a/westeros-render-gl.cpp b/westeros-render-gl.cpp
 index 5cc4224..e3dbca4 100644
 --- a/westeros-render-gl.cpp
 +++ b/westeros-render-gl.cpp
-@@ -2311,9 +2311,16 @@ static void wstRendererUpdateScene( WstRenderer *renderer )
+@@ -2311,9 +2311,17 @@ static void wstRendererUpdateScene( WstRenderer *renderer )
     }
  
     #ifndef ENABLE_LEXPSYNCPROTOCOL
@@ -47,8 +49,9 @@ index 5cc4224..e3dbca4 100644
 +      #if defined (WESTEROS_RENDER_FINISH)
 +      /* A client's buffer is read where it is, and is given back to the client
 +         when its next one is committed. Without fences, nothing else keeps the
-+         client from drawing into it again before this drawing has been done. */
-+      static bool needFinish= true;
++         client from drawing into it again before this drawing has been done.
++         WESTEROS_RENDER_NO_FINISH in the environment turns this off. */
++      static bool needFinish= (getenv("WESTEROS_RENDER_NO_FINISH") == NULL);
 +      #else
        static bool needFinish= (getenv("WAYLAND_EGL_BNXS_ZEROCOPY") == NULL);
 +      #endif

@@ -5,8 +5,10 @@
         [--audio-control PORT] [--control]
 
 It shows the target's display, which it follows with the remote framebuffer
-protocol (emulator/rfb.py): ADDRESS is a socket path or HOST:PORT. The display
-is scaled to the window, keeping its shape.
+protocol (emulator/rfb.py): ADDRESS is a socket path or HOST:PORT. Or, where
+the launcher says so with an ADDRESS that starts with "dbus:", with QEMU's
+D-Bus display (emulator/dbusdisplay.py). The display is scaled to the window,
+keeping its shape.
 
 Windowed, it has a small toolbar: mute, 1:1 (one pixel of the display on one
 pixel of the screen), full screen, and the on-screen remote control. Full
@@ -32,7 +34,7 @@ from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRect, QRectF, QSiz
 from PySide6.QtGui import QAction, QColor, QIcon, QImage, QPainter, QPalette, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import QApplication, QMainWindow, QToolBar, QWidget
 
-from .. import hostaudio, redrat, remote, rfb
+from .. import dbusdisplay, graphics, hostaudio, redrat, remote, rfb
 from ..errors import EmuError
 from .redrat import Receiver
 from .remote_window import RemoteControlWindow
@@ -218,7 +220,10 @@ class Window(QMainWindow):
         self.feed.sized.connect(self.on_size)
         self.feed.updated.connect(self.display.on_update)
         self.feed.state.connect(self.display.on_state)
-        self.client = rfb.Client(args.display, self.feed.sized.emit, self.feed.updated.emit, self.feed.state.emit)
+        follow, address = rfb.Client, args.display
+        if isinstance(address, str) and address.startswith(graphics.DBUS_PREFIX):
+            follow, address = dbusdisplay.Client, address[len(graphics.DBUS_PREFIX):]
+        self.client = follow(address, self.feed.sized.emit, self.feed.updated.emit, self.feed.state.emit)
         self.display.client = self.client
         self.fitted = None              # the window size this program last chose, if it still has it
 
@@ -551,6 +556,8 @@ def _size(text):
 
 
 def _address(text):
+    if text.startswith(graphics.DBUS_PREFIX):
+        return text
     host, separator, port = text.rpartition(":")
     if separator and port.isdigit() and "/" not in text and "\\" not in text:
         return (host or "127.0.0.1", int(port))

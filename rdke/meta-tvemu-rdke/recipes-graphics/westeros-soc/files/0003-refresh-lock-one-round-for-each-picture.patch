@@ -1,0 +1,85 @@
+Refresh lock: show a swapped buffer at the next round, and time the rounds by the clock
+
+Two things kept a compositor that waits in its swap (WESTEROS_GL_USE_REFRESH_LOCK)
+on a device without vertical blank events (WESTEROS_GL_NO_VBLANK) at about
+half the display's refresh rate:
+
+- The swap marked its window dirty only after the refresh thread had let it
+  go, so the buffer was shown one round later than it could be, and each
+  picture took two rounds. It is marked before the wait now: the next round
+  shows the buffer and then lets the swap go.
+- Without a vertical blank to wait for, the refresh thread slept a fixed time
+  after each round's work: three quarters of a refresh interval when it had
+  shown something, a whole one when not. A round was therefore not a refresh
+  interval long. The sleep now ends at the next multiple of the interval.
+
+Measured in the tv-emu virtual machine (virtio-gpu, Mesa's llvmpipe, 1920x1080
+at 60): RDK's window manager showed 35 pictures a second before.
+
+Upstream-Status: Pending
+
+diff --git a/westeros-gl/westeros-gl.c b/westeros-gl/westeros-gl.c
+index c64cf9d..ee7f146 100644
+--- a/westeros-gl/westeros-gl.c
++++ b/westeros-gl/westeros-gl.c
+@@ -5976,6 +5976,7 @@ static void *wstRefreshThread( void *arg )
+    WstGLCtx *ctx= (WstGLCtx*)arg;
+    drmVBlank vbl;
+    long long delay;
++   long long nextRound= 0LL;
+    long long refreshInterval= 0LL;
+    long long vblankTime= 0LL;
+    #ifdef USE_EXTERNAL_STATS
+@@ -6083,7 +6084,28 @@ static void *wstRefreshThread( void *arg )
+       {
+          if ( delay )
+          {
+-            usleep( delay );
++            /* Without a vertical blank to wait for, the rounds are timed by
++               the clock, one each refresh interval. Sleeping a fixed time
++               after each round's work, as it was, gave rounds of the work
++               plus three quarters of an interval when something was shown
++               and of a whole interval when not. */
++            long long now= getMonotonicTimeMicros();
++            if ( refreshInterval > 0 )
++            {
++               nextRound += refreshInterval;
++               if ( nextRound > now )
++               {
++                  usleep( nextRound-now );
++               }
++               else
++               {
++                  nextRound= now;
++               }
++            }
++            else
++            {
++               usleep( delay );
++            }
+          }
+       }
+    }
+@@ -7703,15 +7725,19 @@ EGLAPI EGLBoolean eglSwapBuffers( EGLDisplay dpy, EGLSurface surface )
+             if ( gRealGLFinish ) gRealGLFinish();
+             result= gRealEGLSwapBuffers( dpy, surface );
+             pthread_mutex_lock( &nwIter->mutexRefresh );
++            /* The window is dirty from here on, so that the refresh thread's
++               next round shows this buffer and then lets the swap go. Marked
++               only after the wait, as it was, a buffer was shown a round
++               later than it could be: two rounds for each picture. */
++            TRACE3("mark nw %p dirty", nwIter);
++            gCtx->dirty= true;
++            nwIter->dirty= true;
+             pthread_cond_wait( &nwIter->condRefresh, &nwIter->mutexRefresh );
+         } else {
+              result= gRealEGLSwapBuffers( dpy, surface );
+          }
+          if ( nwIter )
+          {
+-            TRACE3("mark nw %p dirty", nwIter);
+-            gCtx->dirty= true;
+-            nwIter->dirty= true;
+             pthread_mutex_unlock( &nwIter->mutexRefresh );
+          }
+       }

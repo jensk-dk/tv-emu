@@ -9,6 +9,7 @@ CXXFLAGS:append = " -DWESTEROS_PLATFORM_DRM -DUSE_MESA"
 
 # Mesa's software renderer has no fences: Westeros finishes the drawing of a
 # surface before the client can have its buffer back (see the patch).
+# WESTEROS_RENDER_NO_FINISH in the compositor's environment turns that off.
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 SRC_URI:append = " file://0001-finish-drawing-before-a-client-buffer-is-given-back.patch"
 CXXFLAGS:append = " -DWESTEROS_RENDER_FINISH"

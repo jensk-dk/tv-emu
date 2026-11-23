@@ -225,11 +225,18 @@ def choose(requested, probe):
             "reason": "no compatible host graphics acceleration: %s" % found["reason"]}
 
 
-def vm_arguments(plan, width, height, memory_mb, options):
+def vm_arguments(plan, width, height, memory_mb, options, sixty=False):
     """QEMU arguments for the display device; returns (arguments, display
     backend, device description). The display is shown in a window when the
-    plan names one, and nowhere otherwise."""
+    plan names one, and nowhere otherwise.
+
+    `sixty` asks for a display of 60 pictures a second. QEMU's device
+    describes its monitor to the target (EDID) with 75 as the refresh rate of
+    the size asked for, and has no setting for another; without the
+    description the target's kernel makes the mode itself, at 60."""
     size = "xres=%d,yres=%d" % (width, height)
+    if sixty:
+        size += ",edid=off"
     # The launcher's own window is not a display backend of QEMU's.
     window = plan.get("window") if plan.get("window") != LAUNCHER_WINDOW else None
     if plan["provider"] != "host":
@@ -427,8 +434,9 @@ def vnc_endpoint():
     (QEMU arguments, address for emulator/rfb.py, directory to remove
     afterwards).
 
-    On macOS it is a port of the loopback address, as on Windows, and not a
-    private socket: a socket of that kind takes 8 KB at a time there, QEMU
+    On macOS the window gets the display another way where it can
+    (window_endpoint). Where it cannot, this is a port of the loopback
+    address, as on Windows, and not a private socket: a socket of that kind takes 8 KB at a time there, QEMU
     writes one such piece each time its event loop comes round, and a display
     of 1920x1080 (8 MB a picture) then reached the window 6 to 7 times a
     second where the port gives 18 to 19. The port has no password: programs
@@ -439,6 +447,29 @@ def vnc_endpoint():
         return ["-vnc", "unix:" + path], path, directory
     port = _vnc_port()
     return ["-vnc", "127.0.0.1:%d" % (port - 5900)], ("127.0.0.1", port), None
+
+
+DBUS_DISPLAY = "dbus,p2p=yes"
+DBUS_PREFIX = "dbus:"
+
+
+def window_endpoint(binary, plan):
+    """Where the launcher's window gets a VM's display from. Returns (QEMU
+    arguments, QEMU's display backend or None for the one already chosen,
+    address for the window, directory to remove afterwards).
+
+    On macOS, for a display that the target's CPU renders, it is QEMU's D-Bus
+    display over a private socket (emulator/dbusdisplay.py, which says why);
+    the address then starts with "dbus:". Everywhere else, and where this
+    QEMU has no such display, it is QEMU's VNC server (vnc_endpoint).
+    """
+    if host.host_os() == "macos" and plan["provider"] != "host" \
+            and "dbus" in _qemu_output(binary, "-display", "help").split():
+        path, directory = _private_socket("display.sock")
+        if path:
+            return ["-qmp", "unix:%s,server=on,wait=off" % path], DBUS_DISPLAY, DBUS_PREFIX + path, directory
+    arguments, address, directory = vnc_endpoint()
+    return arguments, None, address, directory
 
 
 def capture_endpoint(plan, vnc=None):

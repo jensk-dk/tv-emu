@@ -374,14 +374,20 @@ def launch(opts):
             vnc = None
             if display:
                 display_args, display_backend, display_device = graphics.vm_arguments(
-                    display, display["width"], display["height"], opts.memory_mb, opts.options)
+                    display, display["width"], display["height"], opts.memory_mb, opts.options,
+                    # RDK-E's compositor shows a picture each refresh of the mode it is given.
+                    sixty=rdke)
                 if own:
                     # QEMU serves the display for the window, and the target
                     # fetches remote control keys from a port the window
                     # listens on (10.0.2.2 is this host, seen from the target).
-                    vnc_args, vnc, vnc_directory = graphics.vnc_endpoint()
-                    display_args += vnc_args
-                    viewer_plan = {"display": vnc, "directory": vnc_directory}
+                    window_args, backend, shown_at, window_directory = graphics.window_endpoint(qemu, display)
+                    display_args += window_args
+                    if backend:
+                        display_backend = backend
+                    else:
+                        vnc = shown_at
+                    viewer_plan = {"display": shown_at, "directory": window_directory}
                     port = window.free_port()
                     viewer_plan["keys_listen"] = port
                     if rdke:

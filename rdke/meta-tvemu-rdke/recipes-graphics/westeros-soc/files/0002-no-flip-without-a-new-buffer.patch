@@ -1,0 +1,49 @@
+Do not flip when no new buffer has been swapped
+
+With the refresh lock (WESTEROS_GL_USE_REFRESH_LOCK) a swap waits for the
+refresh thread and marks its window dirty only when it is let go. A swap that
+comes in before the flip of the previous one is shown by that flip already
+(the front buffer is the newest one), and the window is then marked dirty
+once more with nothing new behind it. The next flip got no buffer from
+gbm_surface_lock_front_buffer and took the handle of none: the process ended
+on signal 11 in the refresh thread (wstVRefresh). This happens as soon as the
+compositor draws faster than the refresh thread comes round, which RDK's
+window manager does at a pace above 60. The atomic path has the check; this
+adds it to the other one, which a device without atomic mode setting for
+its plane uses.
+
+Upstream-Status: Pending
+
+diff --git a/westeros-gl/westeros-gl.c b/westeros-gl/westeros-gl.c
+index 90082f2..c64cf9d 100644
+--- a/westeros-gl/westeros-gl.c
++++ b/westeros-gl/westeros-gl.c
+@@ -7045,12 +7045,26 @@ static void wstSwapDRMBuffers( WstGLCtx *ctx )
+          if ( nw->dirty )
+          {
+             TRACE3("nw %p dirty", nw);
+-            nw->prevBo= nw->bo;
+-            nw->prevFbId= nw->fbId;
+             gs= (struct gbm_surface*)nw->nativeWindow;
+             if ( gs )
+             {
+                bo= gbm_surface_lock_front_buffer(gs);
++               if ( !bo )
++               {
++                  /* Nothing has been swapped since the last flip: with the
++                     refresh lock a window is marked dirty when its swap is
++                     let go, which is after the flip that showed it if the
++                     swap came in before that flip. There is nothing new to
++                     show, and no buffer to take a handle of. */
++                  nw->dirty= false;
++                  nw= nw->next;
++                  continue;
++               }
++            }
++            nw->prevBo= nw->bo;
++            nw->prevFbId= nw->fbId;
++            if ( gs )
++            {
+                wstUpdateResources( WSTRES_BO_GRAPHICS, true, (long long)bo, __LINE__);
+ 
+                handle= gbm_bo_get_handle(bo).u32;

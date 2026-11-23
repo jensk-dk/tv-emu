@@ -606,8 +606,18 @@ the emulator.
   Ctrl+Alt+M mutes, Ctrl+Alt+1 is 1:1, Ctrl+Alt+R shows or hides the remote.
   On a Mac use Control or Command with Option. The on-screen remote starts
   hidden; the toolbar button or Ctrl+Alt+R toggles it.
-- **How the display gets there.** In VM mode QEMU serves it (its VNC server,
-  on a socket of the run, or on a loopback port on Windows). In container mode
+- **How the display gets there.** In VM mode QEMU serves it. On Linux and
+  Windows that is its VNC server, on a socket of the run or, on Windows, on a
+  loopback port. On macOS, for a display that the target's CPU renders, it is
+  QEMU's D-Bus display over a private socket pair
+  ([emulator/dbusdisplay.py](emulator/dbusdisplay.py)): QEMU's VNC server
+  passed on 15 to 20 pictures a second of a display that changed 35 times a
+  second, and over D-Bus the window gets each of them (60 a second of the
+  RDK-E image's display, which changes that often since 2026-11-23; for
+  that image the display device has no monitor description, `edid=off`, so
+  that its mode is one of 60 pictures a second and not QEMU's 75). No D-Bus software is
+  needed on the host. Where a Mac's QEMU has no D-Bus display, it is the VNC
+  server on a loopback port, which has no password. In container mode
   a program in the target captures the compositor's output and serves it the
   same way on a port published on the host's loopback address
   ([target/src/emuscreen.c](target/src/emuscreen.c)). That is done only

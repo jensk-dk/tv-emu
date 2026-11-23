@@ -12,6 +12,8 @@ LIC_FILES_CHKSUM = "file://${LICENSE_LOCATION};md5=7df5a8706277b586ca00083804699
 # The release the Pi's vendor layer names (vendor_pkg_versions.inc).
 SRC_URI = "git://github.com/rdkcentral/westeros-gl-drm;protocol=https;nobranch=1 \
            file://0001-graphics-frame-buffer-depth.patch \
+           file://0002-no-flip-without-a-new-buffer.patch \
+           file://0003-refresh-lock-one-round-for-each-picture.patch \
            "
 SRCREV = "762fecb6e406d00a05200a0a6998a11e703e1b4b"
 PV = "2.1.4"
