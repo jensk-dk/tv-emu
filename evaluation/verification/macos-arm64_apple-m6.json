@@ -586,17 +586,17 @@
       "task": "5.3",
       "description": "decoded audio is played through the host OS, from a host-native VM",
       "details": [
-        "MP2: played on the target in 5.7 s; its 440 Hz tone reached the host-side process and was recorded at the host's audio output",
+        "MP2: played on the target in 5.8 s; its 440 Hz tone reached the host-side process and was recorded at the host's audio output",
         "AC-3: played on the target in 5.9 s; its 660 Hz tone reached the host-side process and was recorded at the host's audio output",
         "AAC: played on the target in 5.9 s; its 880 Hz tone reached the host-side process and was recorded at the host's audio output",
         "HE-AAC: played on the target in 5.9, 5.9 s; its 1100 Hz tone reached the host-side process and was recorded at the host's audio output",
         "path: target ALSA device (kernel:virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe -> the host's player program (emu-coreaudio)",
-        "host output device: Astro A50 Voice, at volume 0; it played for 31.8 s by its own clock, 14.4 s of that the target's sound",
-        "the host's audio server reported the player process as playing on: Astro A50 Voice"
+        "host output device: H\u00f8jttalere i Mac mini, at volume 0; it played for 31.8 s by its own clock, 14.4 s of that the target's sound",
+        "the host's audio server reported the player process as playing on: H\u00f8jttalere i Mac mini"
       ],
-      "checked_at": "2026-11-23T21:21:54Z",
-      "seconds": 32.9,
-      "revision": "9325e2af02c2323b17baa1cc86c1cc379391a8d6",
+      "checked_at": "2026-11-23T21:49:12Z",
+      "seconds": 33.0,
+      "revision": "ae42fefa56bc444c10b3ed1035bbd8858e966609",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     },
     "audio-mute-container": {
@@ -2177,12 +2177,12 @@
       "description": "RDK's browser shows a page in an RDK-E image and gets the remote control's keys",
       "details": [
         "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest, and RDK's browser plug-in HtmlApp (WPE WebKit) showed the image's page on a display of RDK's window manager: tvemu-app-start: HtmlApp shows file:///usr/share/tvemu/page/index.html on wst-htmlapp (1920x1080)",
-        "the launcher's window got the page's picture at 1920x1080: its red corner blocks and its background are where the page draws them; the plug-in reports 42 frames a second",
+        "the launcher's window got the page's picture at 1920x1080: its red corner blocks and its background are where the page draws them; the plug-in reports 41 frames a second",
         "13 remote control keys sent from the window arrived in the page, each with a web page's name and code for it: ok as Enter, up as ArrowUp, down as ArrowDown, left as ArrowLeft, right as ArrowRight, back as Backspace, 1 as 1, play as MediaPlay, red as ColorF0Red, green as ColorF1Green, yellow as ColorF2Yellow, blue as ColorF3Blue, exit as Escape"
       ],
-      "checked_at": "2026-11-23T21:20:39Z",
-      "seconds": 28.4,
-      "revision": "9325e2af02c2323b17baa1cc86c1cc379391a8d6",
+      "checked_at": "2026-11-23T21:48:11Z",
+      "seconds": 33.0,
+      "revision": "ae42fefa56bc444c10b3ed1035bbd8858e966609",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     },
     "rdke-launcher": {
@@ -2192,11 +2192,11 @@
       "details": [
         "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest with RDK's reference user interface, and a call of org.rdk.RDKShell's launch, as that user interface makes it, started the browser plug-in HtmlApp with the image's page: the launcher's window got the page's picture at 1920x1080",
         "the image's stand-in answered the call (RDK-E's middleware has org.rdk.RDKWindowManager in its place) and names the application as resumed; the OK key arrived in the application",
-        "the EXIT key, pressed 2 times before it was taken, went to the user interface, which ended the application: it is no longer in org.rdk.RDKShell's getState, its page is off the display, and the user interface has its display"
+        "the EXIT key went to the user interface, which ended the application: it is no longer in org.rdk.RDKShell's getState, its page is off the display, and the user interface has its display"
       ],
-      "checked_at": "2026-11-23T21:21:21Z",
-      "seconds": 42.5,
-      "revision": "9325e2af02c2323b17baa1cc86c1cc379391a8d6",
+      "checked_at": "2026-11-23T21:48:39Z",
+      "seconds": 28.1,
+      "revision": "ae42fefa56bc444c10b3ed1035bbd8858e966609",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     },
     "rdke-video": {
@@ -2205,15 +2205,15 @@
       "description": "RDK's browser plays video with sound in an RDK-E image, and both reach the host",
       "details": [
         "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest, and RDK's browser plug-in HtmlApp (WPE WebKit) played the image's H.264 and AAC reference stream from a page: its player reports it playing at 1280x720, with its time moving",
-        "the launcher's window got the stream's picture, full screen at 1920x1080: its four corner blocks and its marker block have the stream's colours; decoding and drawing are done on the target's CPU, with the browser's processes at 200% of one CPU",
-        "the stream's 880 Hz tone reached the host-side process in 118 tenths of a second; path: target sound card (0 [SoundCard      ]: virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe",
+        "the launcher's window got the stream's picture, full screen at 1920x1080: its four corner blocks and its marker block have the stream's colours; decoding and drawing are done on the target's CPU, with the browser's processes at 246% of one CPU",
+        "the stream's 880 Hz tone reached the host-side process in 110 tenths of a second; path: target sound card (0 [SoundCard      ]: virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe",
         "the tone was recorded at the host's audio output",
-        "host output device: Astro A50 Voice, at volume 0; it played for 17.8 s by its own clock, 13.1 s of that the target's sound",
-        "the host's audio server reported the player process as playing on: Astro A50 Voice"
+        "host output device: H\u00f8jttalere i Mac mini, at volume 0; it played for 16.8 s by its own clock, 12.3 s of that the target's sound",
+        "the host's audio server reported the player process as playing on: H\u00f8jttalere i Mac mini"
       ],
-      "checked_at": "2026-11-23T21:20:10Z",
-      "seconds": 34.2,
-      "revision": "9325e2af02c2323b17baa1cc86c1cc379391a8d6",
+      "checked_at": "2026-11-23T21:47:38Z",
+      "seconds": 33.3,
+      "revision": "ae42fefa56bc444c10b3ed1035bbd8858e966609",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     }
   }

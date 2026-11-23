@@ -556,11 +556,24 @@ its library. Run after it on 2026-11-23: the unit is disabled and inactive,
 no unit fails or is started again in a loop, and the plug-in
 `org.rdk.Bluetooth` is still activated; no call to it was tried.
 
-**Still seen at start-up, not looked into** (2026-11-23): the process of the
-XCast plug-in (a `WPEProcess`) ends once with a segmentation fault a few
-seconds after Thunder starts; `dropbear.service` fails its first start in
-some boots and starts at the retry five seconds later; the plug-ins
-`org.rdk.AVOutput` and `org.rdk.UserPreferences` are deactivated.
+**The XCast plug-in's process ended with a segmentation fault; repaired.**
+A few seconds after Thunder started, the `WPEProcess` of XCast ended in
+`fprintf()`, called from the DIAL server's library (xdialserver,
+`gdialService::getInstance` to `gdial_plat_util_log`; from a core dump).
+`server/plat/gdial-plat-util.c` calls `basename()` with no declaration in
+sight, so the C compiler takes its result to be an int: the whole pointer on
+32-bit ARM, its lower half where a pointer has 64 bits. The first message
+the library logs is the end of the process. A patch declares it
+(`recipes-middleware/xdial`), and the recipe now makes a call of an
+undeclared function an error in this library's build. Run after it on
+2026-11-23: no process ends with a signal at start, the plug-in is
+activated, the library logs, and the DIAL server listens on the VM's ports
+56889 and 56890 and on UDP 1900. No DIAL request was made to it.
+
+**Still seen at start-up, not looked into** (2026-11-23):
+`dropbear.service` fails its first start in some boots and starts at the
+retry five seconds later; the plug-ins `org.rdk.AVOutput` and
+`org.rdk.UserPreferences` are deactivated.
 
 **What RDK-E's code assumes of 32-bit ARM.** Found by building and running
 it as 64-bit programs; each is handled in this layer, with a comment at the
