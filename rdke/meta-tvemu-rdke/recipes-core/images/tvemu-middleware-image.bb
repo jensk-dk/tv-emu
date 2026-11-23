@@ -16,3 +16,20 @@ IMAGE_INSTALL:append = " \
     "
 
 IMAGE_ROOTFS_EXTRA_SPACE = "262144"
+
+# Dobby, the container daemon, reads /etc/dobby.json. The middleware's recipe
+# installs its settings as /etc/dobby.generic.json and leaves it to the image
+# to give them that name unless a vendor layer has brought its own, as RDK-E's
+# middleware-test-image does. Without the file Dobby ends with a segmentation
+# fault at start: its default settings have no GPU and VPU part, and it prints
+# them.
+dobby_generic_config_patch () {
+    if [ -f "${IMAGE_ROOTFS}/etc/dobby.generic.json" ]; then
+        if [ -f "${IMAGE_ROOTFS}/etc/dobby.json" ]; then
+            rm ${IMAGE_ROOTFS}/etc/dobby.generic.json
+        else
+            mv ${IMAGE_ROOTFS}/etc/dobby.generic.json ${IMAGE_ROOTFS}/etc/dobby.json
+        fi
+    fi
+}
+ROOTFS_POSTPROCESS_COMMAND += "dobby_generic_config_patch; "

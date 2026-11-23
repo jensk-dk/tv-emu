@@ -333,7 +333,8 @@ host on 2026-11-20: 3186 tasks, no error left; the root file system is
   (`ERROR_OPENING_FAILED`), the plug-in stays deactivated, and Thunder keeps
   its process. The plug-in decrypts nothing: the image has no DRM system.
 - Found: `dobby.service`, RDK's container daemon, which the packages bring
-  with them, does not start. Not looked into.
+  with them, does not start. Looked into and repaired on 2026-11-23, see
+  "The middleware, built".
 - This image has no compositor: it was built to try Thunder alone.
 
 **RDK builds a virtual device of its own.** The middleware layers have a
@@ -389,7 +390,20 @@ black, since nothing is installed that draws.
 builds: 8145 tasks, none failing, on the macOS host on 2026-11-20. The image
 is 639 MB. Started host-native, the system comes up in about a minute with
 one failed unit (`dobby.service`, RDK's container daemon, which ends with a
-segmentation fault; not looked into).
+segmentation fault).
+
+**Dobby ended with a segmentation fault for want of its settings file;
+repaired.** Looked into on 2026-11-23. Dobby reads `/etc/dobby.json`. The
+middleware's recipe installs its settings as `/etc/dobby.generic.json` and
+leaves it to the image to give them that name unless a vendor layer brings
+its own; RDK-E's `middleware-test-image` does that, this layer's images did
+not. Without the file Dobby takes defaults that have no GPU and VPU part and
+prints them through a null pointer (`Settings::dumpHardwareAccess`,
+`Settings.cpp:607` of Dobby 3.23.0, from a core dump with the debug
+package). `tvemu-middleware-image.bb` now does the step of RDK-E's image.
+Run after it, in the browser image: `dobby.service` is active, no unit has
+failed, and `DobbyTool list` answers "no containers". No container was
+started with it.
 
 **What RDK-E's code assumes of 32-bit ARM.** Found by building and running
 it as 64-bit programs; each is handled in this layer, with a comment at the
@@ -460,8 +474,8 @@ the distro feature `enable_bolt_apps`, which takes WPE WebKit, the plug-in
 and the backend out of the middleware's package group: the browser is meant
 to come as an application package, run in a container by the application
 managers. This image names them itself, as RDK devices had them before. The
-container runtime that the new way needs (Dobby) does not run here yet, see
-"What is open".
+container daemon that the new way needs (Dobby) starts here since
+2026-11-23, but no container was run with it, see "What is open".
 
 **RDK's start script for the user interface does not fit this middleware.**
 `residentApp.sh` calls `org.rdk.RDKShell.1.launch`. This middleware has
@@ -967,8 +981,8 @@ reaches the host-side sound process and the host's output device (see
 4. **The application layer as RDK-E means it.** The browser and the user
    interface are in the image directly (see above). RDK-E's own way, the
    browser as an application package that the application managers run in
-   a container, is not tried, and its container daemon (Dobby) ends with a
-   segmentation fault at start in this image. The user interface in the
+   a container, is not tried. Its container daemon (Dobby) starts in this
+   image; no container was started with it. The user interface in the
    image is the last line of releases that starts applications with
    RDKShell (5.0.24), on a stand-in for it; the releases from 6.0 on use
    the application managers.
