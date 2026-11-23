@@ -1,9 +1,10 @@
 #!/bin/bash
 # Asks Yocto whether RDK-E's middleware resolves for the machine
-# tvemu-arm64-rdke: which recipes and which things of a vendor layer are
-# missing. Nothing is built.
+# tvemu-arm64-rdke or tvemu-x86-64-rdke (that of the host's CPU, or the one
+# TVEMU_RDKE_ARCH names): which recipes and which things of a vendor layer
+# are missing. Nothing is built.
 #
-#   rdke/probe-middleware.sh [64|32] [BITBAKE TARGET ...]
+#   [TVEMU_RDKE_ARCH=arm64|x86_64] rdke/probe-middleware.sh [64|32] [BITBAKE TARGET ...]
 #
 # It fetches the middleware layers that middleware-manifest-rdke names
 # (develop, 2026-11-20; a few MB, to build/rdke-check/middleware) and runs
@@ -35,6 +36,6 @@ echo "bitbake's status: $status"
 EOT
 chmod +x "$work/probe-in-container.sh"
 mkdir -p "$work/probe"
-"$runtime" run --rm -v "$work/probe:/out" -e PROBE_LINES="${PROBE_LINES:-80}" -e PROBE_HEAD="${PROBE_HEAD:-0}" -v "$work:/work/rdk:ro" \
+"$runtime" run --rm -e TVEMU_MACHINE -v "$work/probe:/out" -e PROBE_LINES="${PROBE_LINES:-80}" -e PROBE_HEAD="${PROBE_HEAD:-0}" -v "$work:/work/rdk:ro" \
   -v "$here/meta-tvemu-rdke:/work/meta-tvemu-rdke:ro" \
   tvemu-rdke-check /work/rdk/probe-in-container.sh "$userland" $targets

@@ -5,5 +5,5 @@
 # through here. The handle then arrives cut to 32 bits in that callback: see
 # rdke/README.md for what that means and what is not yet looked at.
 # (The recipe compiles its C++ sources with CFLAGS.)
-CFLAGS:append:aarch64 = " -fpermissive"
-CXXFLAGS:append:aarch64 = " -fpermissive"
+CFLAGS:append:tvemu64 = " -fpermissive"
+CXXFLAGS:append:tvemu64 = " -fpermissive"

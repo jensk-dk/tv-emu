@@ -2693,18 +2693,26 @@ def check_rootfs_option():
     lines = ["--rootfs offers %s, and %s without it" % (" and ".join(rootfs.CHOICES), rootfs.DEBIAN),
              "--rootfs rdke is refused with %s; without an image the launcher names the directory" % ", ".join(said)]
 
-    stand_in = image.artifact_dir("vm", rootfs.RDKE_ARCH)
-    manifest = image.load_manifest("vm", rootfs.RDKE_ARCH)
-    arch = "native" if host.host_arch() == rootfs.RDKE_ARCH else rootfs.RDKE_ARCH
+    # The stand-in is the Debian VM image of the host's own CPU architecture
+    # where an RDK-E machine has that one, and the ARM64 one elsewhere.
+    native = host.host_arch()
+    stand_in_arch = native if native in rootfs.RDKE_ARCHS else "arm64"
+    names = {"arm64": "ARM64", "x86_64": "x86-64"}
+    stand_in = image.artifact_dir("vm", stand_in_arch)
+    manifest = image.load_manifest("vm", stand_in_arch)
     if not (manifest and image.is_current(manifest) and all((stand_in / name).is_file() for name in image.VM_FILES)) \
-            or not host.find_tool(vm.QEMU_BINARY[rootfs.RDKE_ARCH]):
+            or not host.find_tool(vm.QEMU_BINARY[stand_in_arch]):
         raise CheckUnavailable("\n".join(lines + [
-            "nothing was booted: the stand-in is the ARM64 Debian VM image, which is not built on this host, or "
-            "its emulator is not installed (%s)" % host.ARM_SETUP_HINT]))
+            "nothing was booted: the stand-in is the %s Debian VM image, which is not built on this host, or "
+            "its emulator is not installed (%s)" % (names[stand_in_arch], host.ARM_SETUP_HINT)]))
 
-    def boot(directory):
+    def kind_of(guest):
+        return "host-native" if guest == native else "simulated %s" % names[guest]
+
+    def boot(directory, guest):
         """Start an image with --rootfs rdke until its own init is at work;
         returns what the console showed and how long it took."""
+        arch = "native" if guest == native else guest
         command = [sys.executable, "-m", "emulator", "run", "--mode", "vm", "--arch", arch, "--rootfs", rootfs.RDKE,
                    "--option", "%s=%s" % (rootfs.RDKE_DIR_OPTION, directory), "--timeout", "600"]
         # In a process group of its own, so that ending the launcher here ends
@@ -2736,20 +2744,21 @@ def check_rootfs_option():
         _require("EMU-READY" not in text, "the launcher's own init ran, which --rootfs rdke must not ask for")
         return text, time.time() - started
 
-    kind = "host-native" if arch == "native" else "simulated ARM64"
-    _, seconds = boot(stand_in)
-    lines.append("a stand-in (the ARM64 Debian VM image, started with --rootfs rdke as an RDK-E image would be) "
-                 "booted its kernel and its own init in %.0fs, in a %s guest" % (seconds, kind))
-    # An image built for the RDK-E machine, where this host has one.
-    present, said = rootfs.rdke_state()
+    _, seconds = boot(stand_in, stand_in_arch)
+    lines.append("a stand-in (the %s Debian VM image, started with --rootfs rdke as an RDK-E image would be) "
+                 "booted its kernel and its own init in %.0fs, in a %s guest"
+                 % (names[stand_in_arch], seconds, kind_of(stand_in_arch)))
+    # An image built for an RDK-E machine, where this host has one.
+    guest = rootfs.rdke_arch()
+    present, said = rootfs.rdke_state(arch=guest)
     if not present:
         return lines + ["no RDK-E image is built on this host, so none was booted"]
-    text, seconds = boot(rootfs.rdke_dir())
-    _require("tvemu-arm64-rdke" in text or "systemd" in text, "what booted from %s does not look like the image of "
-             "the machine tvemu-arm64-rdke: %s" % (rootfs.rdke_dir(), text[-400:]))
-    return lines + ["the image built for the machine tvemu-arm64-rdke (%s) booted its kernel and its own init in "
-                    "%.0fs, in a %s guest: a minimal image on RDK-E's base layers, without its middleware"
-                    % (said, seconds, kind)]
+    machine = rootfs.RDKE_MACHINES[guest]
+    text, seconds = boot(rootfs.rdke_dir(arch=guest), guest)
+    _require(machine in text or "systemd" in text, "what booted from %s does not look like the image of "
+             "the machine %s: %s" % (rootfs.rdke_dir(arch=guest), machine, text[-400:]))
+    return lines + ["the image built for the machine %s (%s) booted its kernel and its own init in "
+                    "%.0fs, in a %s guest" % (machine, said, seconds, kind_of(guest))]
 
 
 # What the page of the RDK-E image (rdke/meta-tvemu-rdke, tvemu-browser-page)
@@ -2792,16 +2801,18 @@ def _rdke_session(body, options=None, on_audio=None):
     `options` say where it goes. Returns `seen` (with the run's outcome as
     "outcome"), the kind of guest, and what the image is."""
     from . import rootfs
-    present, said = rootfs.rdke_state()
+    guest = rootfs.rdke_arch()
+    present, said = rootfs.rdke_state(arch=guest)
     if not present:
         raise CheckUnavailable("no RDK-E image is built on this host (%s); %s says how one is built"
                                % (said, rootfs.RDKE_README))
-    if not host.find_tool(vm.QEMU_BINARY[rootfs.RDKE_ARCH]):
-        raise CheckUnavailable("the emulator for an ARM64 guest is not installed (%s)" % host.ARM_SETUP_HINT)
+    if not host.find_tool(vm.QEMU_BINARY[guest]):
+        raise CheckUnavailable("the emulator for the image's %s guest is not installed (%s)"
+                               % (guest, host.ARM_SETUP_HINT if guest != host.host_arch() else host.SETUP_HINT))
     if not window.gui_python():
         raise CheckUnavailable("Qt for Python (%s) is not installed on this host, so the launcher has no windows; %s"
                                % (window.PACKAGE, host.SETUP_HINT))
-    arch = "native" if host.host_arch() == rootfs.RDKE_ARCH else rootfs.RDKE_ARCH
+    arch = "native" if host.host_arch() == guest else guest
     # A simulated CPU takes many times as long for all of it.
     slow = 1 if arch == "native" else 15
     reader, writer = os.pipe()
@@ -2867,7 +2878,7 @@ def _rdke_session(body, options=None, on_audio=None):
         raise CheckUnavailable(seen["unavailable"])
     _require("error" not in seen, seen.get("error"))
     _require(not outcome.timed_out, "the run did not end by itself: %r" % seen)
-    kind = "host-native" if arch == "native" else "simulated ARM64"
+    kind = "host-native" if arch == "native" else "simulated " + {"arm64": "ARM64", "x86_64": "x86-64"}.get(guest, guest)
     return seen, kind, said
 
 
@@ -2955,7 +2966,7 @@ def check_rdke_launcher():
             return
         # The user interface asks for its keys (EXIT among them) when its first page has loaded; a
         # person cannot start an application before that either.
-        if not _wait(lambda: asked("keys", "journalctl -b --no-pager | grep -c 'TvemuRDKShell: key intercepts for "
+        if not _wait(lambda: asked("keys", "{ cat /run/tvemu/rdkshell.log 2> /dev/null; journalctl -b --no-pager; } | grep -c 'TvemuRDKShell: key intercepts for "
                                    "residentapp: done' | grep -c '^[1-9]'") == "1", 180 * slow, 2):
             seen["error"] = "the user interface did not ask for its keys in %d s" % (180 * slow)
             return
@@ -3041,7 +3052,7 @@ def check_rdke_video():
         # with a segmentation fault in Westeros' refresh thread in about three starts of ten.) The
         # volume is the device's, set as RDK's services set it: a device starts below full volume.
         ready = _wait(lambda: asked("ui", "systemctl is-active tvemu-refui | grep -c '^active'") == "1" and
-                      asked("keys", "journalctl -b --no-pager | grep -c 'TvemuRDKShell: key intercepts for "
+                      asked("keys", "{ cat /run/tvemu/rdkshell.log 2> /dev/null; journalctl -b --no-pager; } | grep -c 'TvemuRDKShell: key intercepts for "
                             "residentapp: done' | grep -c '^[1-9]'") == "1", 300 * slow, 2)
         if not ready:
             seen["error"] = "the user interface did not start and ask for its keys in %d s" % (300 * slow)

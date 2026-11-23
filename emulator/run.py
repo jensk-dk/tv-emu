@@ -14,6 +14,18 @@ from .errors import EmuError
 from .paths import BUILD_DIR
 
 DEFAULT_CPUS = 4
+# An RDK-E target draws and decodes on its own CPUs (Mesa's llvmpipe, FFmpeg),
+# and with four of them a host-native guest shows 1080p video at 30 pictures a
+# second on an Intel Core i7-10700K, with eight at 56 (rdke/README.md). It
+# gets half of the host's CPU threads, between the default and this many.
+RDKE_MAX_DEFAULT_CPUS = 8
+
+
+def default_cpus(rdke=False, native=True):
+    """The CPUs a run gives its target when it does not say."""
+    if rdke and native:
+        return max(DEFAULT_CPUS, min(RDKE_MAX_DEFAULT_CPUS, (os.cpu_count() or DEFAULT_CPUS) // 2))
+    return DEFAULT_CPUS
 DEFAULT_MEMORY_MB = 2048
 DEFAULT_DATA_DISK_MB = 1024
 KNOWN_OPTIONS = {
@@ -28,13 +40,13 @@ KNOWN_OPTIONS = {
     "window": "VM mode with a window: qemu shows the display in QEMU's own window, which has no toolbar and takes "
               "no remote control keys (default: the launcher's window wherever it can show the display)",
     rootfs.RDKE_DIR_OPTION: "--rootfs rdke: the directory with the RDK-E image's kernel and root file system "
-                            "(default: build/rdke/arm64)",
+                            "(default: build/rdke/ARCH, with the guest's CPU architecture)",
 }
 KNOWN_OPTIONS.update(driver_features.AUDIO_OPTIONS)
 
 
 class RunOptions:
-    def __init__(self, mode, workload="prompt", args=(), arch="native", cpus=DEFAULT_CPUS,
+    def __init__(self, mode, workload="prompt", args=(), arch="native", cpus=None,
                  memory_mb=DEFAULT_MEMORY_MB, drivers=None, options=None, extra_args=(), timeout=None,
                  echo=True, stdin_script=None, quiet_build=False, rebuild=False, resolution=None, graphics=None,
                  screenshot_dir=None, screenshot_format="png", window=False, muted=False, on_audio=None,
@@ -45,7 +57,7 @@ class RunOptions:
         self.workload = workload
         self.args = list(args)
         self.arch = arch
-        self.cpus = cpus
+        self.cpus = cpus                        # None: default_cpus() for the target
         self.memory_mb = memory_mb
         self.drivers = driver_features.parse([]) if drivers is None else drivers
         self.options = dict(options or {})
@@ -189,6 +201,15 @@ def launch(opts):
     rdke = opts.rootfs == rootfs.RDKE
     if rdke:
         _require_rdke(opts)
+    if not opts.cpus:
+        opts.cpus = default_cpus(rdke, opts.arch in ("native", host.host_arch()))
+    # The RDK-E image draws on the target's CPU (Mesa's llvmpipe) unless host
+    # graphics is asked for. With the host's GPU (virgl) Westeros shows the
+    # video frames of RDK's player (AAMP) as black, and the user interface
+    # does not come back after them (rdke/README.md).
+    rdke_emulated = rdke and (opts.graphics or "auto") == "auto"
+    if rdke_emulated:
+        opts.graphics = "emulated"
         opts.drivers = driver_features.Chosen()     # no driver feature: the target has none of their services
     for name in opts.options:
         if name not in KNOWN_OPTIONS:
@@ -318,10 +339,21 @@ def launch(opts):
             # host is not set up for.
             files = data_disk = manifest = None
             if rdke:
-                if guest != rootfs.RDKE_ARCH:
-                    raise EmuError("the RDK-E root file system is built for an ARM64 guest, and this run's guest "
-                                   "is %s" % guest, hint="--arch arm64 runs it on a simulated CPU")
-                files = rootfs.rdke_files(opts.options)
+                if guest not in rootfs.RDKE_ARCHS:
+                    raise EmuError("the RDK-E root file system is built for an ARM64 or an x86-64 guest, and this "
+                                   "run's guest is %s" % guest,
+                                   hint="--arch native runs the image of the host's CPU architecture, and --arch "
+                                        "arm64 the ARM64 one on a simulated CPU")
+                try:
+                    files = rootfs.rdke_files(opts.options, guest)
+                except EmuError as error:
+                    others = [arch for arch in rootfs.RDKE_ARCHS
+                              if arch != guest and rootfs.rdke_state(opts.options, arch)[0]]
+                    if others and rootfs.RDKE_DIR_OPTION not in opts.options:
+                        error.hint = "an image for %s is there: --arch %s starts it%s" % (
+                            others[0], others[0],
+                            "" if others[0] == host.host_arch() else " on a simulated CPU")
+                    raise
             else:
                 armtargets.require(guest, container.detect)
                 manifest = image.ensure("vm", container.detect, guest, quiet=opts.quiet_build, rebuild=opts.rebuild)
@@ -370,6 +402,10 @@ def launch(opts):
                                hint="leave out --option window=qemu" if asked else "add --graphics emulated")
             # RDK-E's own software draws its user interface: always a display.
             display = _display_plan(opts, lambda: graphics.probe_vm(qemu, None if own else kind), kind, always=rdke)
+            if display and rdke_emulated:
+                display.update({"requested": "auto",
+                                "reason": "the RDK-E image's video is black with host graphics acceleration; "
+                                          "--graphics host asks for it all the same"})
             display_args, display_backend, display_device = [], "none", None
             vnc = None
             if display:

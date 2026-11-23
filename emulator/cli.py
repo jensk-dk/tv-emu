@@ -9,7 +9,7 @@ from . import armtargets, catalog, container, drivers as driver_features, graphi
     report, results, rootfs, verify, vm, window
 from .errors import EmuError
 from .paths import BUILD_DIR
-from .run import DEFAULT_CPUS, DEFAULT_MEMORY_MB, KNOWN_OPTIONS, RunOptions, launch
+from .run import DEFAULT_CPUS, RDKE_MAX_DEFAULT_CPUS, DEFAULT_MEMORY_MB, KNOWN_OPTIONS, RunOptions, launch
 
 # For the launcher's checks: what to set and press in the settings window, in
 # place of a person (emulator/gui/settings.py, --script).
@@ -33,6 +33,14 @@ Started without any arguments, emu shows a window with these settings.
 In an interactive VM prompt, Ctrl-A X quits the emulator.
 """
 
+
+
+class _Given(argparse.Action):
+    """Stores an option's value, and that the command line gave it: its
+    default then depends on the rest of the run."""
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, values)
+        setattr(namespace, self.dest + "_given", True)
 
 def _options(pairs):
     options = {}
@@ -84,7 +92,8 @@ def cmd_run(args):
     outcomes = []
     for index in range(args.repeat):
         opts = RunOptions(
-            mode=args.mode, workload=args.workload, args=workload_args, arch=args.arch, cpus=args.cpus,
+            mode=args.mode, workload=args.workload, args=workload_args, arch=args.arch,
+            cpus=args.cpus if getattr(args, "cpus_given", False) else None,
             memory_mb=args.memory, drivers=driver_features.parse(args.driver), options=_options(args.option),
             extra_args=args.emulator_arg or [], timeout=args.timeout, rebuild=args.rebuild and index == 0,
             resolution=args.resolution, graphics=args.graphics, screenshot_dir=args.screenshot,
@@ -184,10 +193,14 @@ def cmd_report(args):
 def cmd_build(args):
     if args.rootfs == rootfs.RDKE:
         # Not the launcher's to build: say whether it is there.
-        present, said = rootfs.rdke_state()
         print("emu: the RDK-E root file system is built with Yocto, not by the launcher (%s)" % rootfs.RDKE_README)
-        print("emu: %s" % (said if present else said + "; nothing to start --rootfs rdke from"))
-        return 0 if present else 1
+        states = [rootfs.rdke_state(arch=arch) for arch in rootfs.RDKE_ARCHS]
+        for present, said in states:
+            if present:
+                print("emu: %s" % said)
+        if not any(present for present, _ in states):
+            print("emu: %s; nothing to start --rootfs rdke from" % rootfs.rdke_state()[1])
+        return 0 if any(present for present, _ in states) else 1
     modes = ("container", "vm") if args.mode == "all" else (args.mode,)
     native = host.host_arch()
     for mode in modes:
@@ -299,8 +312,9 @@ def cmd_doctor(args):
             state = "not built" if not manifest else "current" if image.is_current(manifest) else "out of date"
             print("image       %-9s %-6s %s" % (kind, arch, state))
     # Not a dependency and not built here: the image of the other root file system.
-    present, said = rootfs.rdke_state()
-    print("rootfs      rdke: %s" % (said if present else "not there (built with Yocto, see %s)" % rootfs.RDKE_README))
+    there = [said for present, said in (rootfs.rdke_state(arch=arch) for arch in rootfs.RDKE_ARCHS) if present]
+    for said in there or ["not there (built with Yocto, see %s)" % rootfs.RDKE_README]:
+        print("rootfs      rdke: %s" % said)
     if problems:
         print("\n%s" % host.SETUP_HINT)
     return 1 if problems else 0
@@ -374,12 +388,14 @@ def build_parser():
     run.add_argument("--rootfs", choices=rootfs.CHOICES, default=rootfs.DEFAULT,
                      help="the root file system the target starts from: debian is the evaluation's own image, with "
                           "the workloads; rdke is an RDK-E image built with Yocto, which the launcher boots in an "
-                          "ARM64 VM and which runs its own software (experimental; see rdke/README.md) "
+                          "ARM64 or x86-64 VM and which runs its own software (experimental; see rdke/README.md) "
                           "(default: %(default)s)")
     run.add_argument("--workload", default="prompt", metavar="NAME",
                      help="target OS workload: prompt, bench, driver-check, graphics-demo "
                           "(default: prompt; see: emu workloads)")
-    run.add_argument("--cpus", type=int, default=DEFAULT_CPUS, help="CPUs given to the target (default: %(default)s)")
+    run.add_argument("--cpus", type=int, default=DEFAULT_CPUS, action=_Given,
+                     help="CPUs given to the target (default: %%(default)s; with --rootfs rdke in a host-native VM "
+                          "half of the host's, at least %%(default)s and at most %d)" % RDKE_MAX_DEFAULT_CPUS)
     run.add_argument("--memory", type=int, default=DEFAULT_MEMORY_MB, metavar="MIB",
                      help="memory given to the target in MiB (default: %(default)s)")
     run.add_argument("--resolution", choices=tuple(graphics.RESOLUTIONS), metavar="RESOLUTION",

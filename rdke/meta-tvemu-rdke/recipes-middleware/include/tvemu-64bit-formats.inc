@@ -8,5 +8,5 @@
 #
 # What is printed with a wrong format can be printed wrongly. No value that
 # is computed with is changed by this.
-CFLAGS:append:aarch64 = " -Wno-error=format -Wno-error=format-truncation"
-CXXFLAGS:append:aarch64 = " -Wno-error=format -Wno-error=format-truncation"
+CFLAGS:append:tvemu64 = " -Wno-error=format -Wno-error=format-truncation"
+CXXFLAGS:append:tvemu64 = " -Wno-error=format -Wno-error=format-truncation"

@@ -8,5 +8,11 @@
 # "undefined instruction" at its first script. A Raspberry Pi 4's CPU has no
 # BTI, and does not show it. Taking the tune's option away is not enough,
 # since the compiler's own default is the same: WebKit is built with none.
-TUNE_CCARGS:remove:tvemu = "-mbranch-protection=standard"
-TUNE_CCARGS:append:tvemu = " -mbranch-protection=none"
+# (An ARM64 matter: the x86-64 machine builds WebKit as it is.)
+TUNE_CCARGS:remove:aarch64 = "-mbranch-protection=standard"
+TUNE_CCARGS:append:aarch64 = " -mbranch-protection=none"
+
+# The recipe turns WebAssembly on for ARM64 only. WebKit's optimizing compiler
+# (B3), which is on for x86-64 as well, refers to it and does not compile
+# without: the x86-64 machine gets WebAssembly as the ARM64 one does.
+PACKAGECONFIG:append:x86-64 = " webassembly"

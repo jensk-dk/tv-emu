@@ -76,6 +76,14 @@ namespace Plugin {
             std::fprintf(stderr, "TvemuRDKShell: %s %s: %s\n", what, who.c_str(),
                 (result == Core::ERROR_NONE ? "done" : Core::ErrorToString(result)));
             std::fflush(stderr);
+            // The image keeps 3 MB of journal, which the other services fill in
+            // a minute or two: the lines are kept in a file as well, for the
+            // one who asks later what the user interface has done.
+            if (FILE* kept = std::fopen("/run/tvemu/rdkshell.log", "a")) {
+                std::fprintf(kept, "TvemuRDKShell: %s %s: %s\n", what, who.c_str(),
+                    (result == Core::ERROR_NONE ? "done" : Core::ErrorToString(result)));
+                std::fclose(kept);
+            }
         }
     }
 

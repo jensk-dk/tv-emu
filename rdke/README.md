@@ -66,16 +66,120 @@ execute 32-bit ARM code at all, so on a Mac a host-native ARM64 VM can run
   feeds have the right architecture then (`rdk-arm64`).
 
 On an x86-64 host, host-native is an x86-64 VM, and this machine is not that:
-there it is the `vm-arm64` mode, on a simulated CPU. An x86-64 machine would
-fuse `qemux86-64` with the same RDK-E parts; RDK-E has no public x86 build.
+there it is the `vm-arm64` mode, on a simulated CPU. The x86-64 machine below
+is for those hosts.
+
+## The x86-64 machine: `tvemu-x86-64-rdke`
+
+`conf/machine/tvemu-x86-64-rdke.conf` is the same fusion with
+openembedded-core's `qemux86-64` in the place of `qemuarm64`: QEMU's `q35`
+board, the kernel as `bzImage`, the console on `ttyS0`, programs for the
+`core2-64` tune. The RDK-E half is the ARM64 machine's, file for file. It is
+always built with 64-bit programs. RDK-E has no public x86 build, so
+everything here was found by building and running it, on the Linux host
+(x86-64, Ubuntu 24.04, QEMU 8.2.2 with KVM) on 2026-11-23:
+
+- *The 64-bit fixes follow the userland, not the CPU.* What the layer
+  changed for a 64-bit build of RDK-E's 32-bit code was written for
+  `aarch64`; it is now under the override `tvemu64`, which
+  `tvemu-userland-64.inc` sets, and holds for both machines.
+- *Ne10* (an ARM NEON library) is taken out of the middleware's package
+  group, and the *xmidt agent*, which RDK publishes as packages, is taken
+  as its x86-64 package.
+- *WebKit* needs WebAssembly on x86-64: its optimizing compiler (B3) is on
+  there and refers to it, and RDK's recipe turns WebAssembly on for ARM64
+  only. The branch-protection setting is ARM64's alone.
+- *The kernel's options* are in three files: `tvemu-virt.cfg` for both, and
+  one for each board. openembedded-core adds its own sound options for
+  `qemux86-64` after them and makes ALSA modules, which left the target
+  without a sound card; that feature (`cfg/sound.scc`) is taken out.
+- *Thunder ended with a segmentation fault at its first start, in every
+  boot.* On this machine Westeros' backend does not get atomic mode setting,
+  and in the path without it the refresh thread took the front buffer of a
+  window marked for redrawing unchecked, when there was none
+  (`gbm_surface_lock_front_buffer` returns NULL). systemd started Thunder
+  again, but when the user interface had been started before the fault it
+  was gone: about half of the boots. Found on Linux and on macOS on the
+  same day; the repair is the one made on macOS
+  (`recipes-graphics/westeros-soc/files/0002-no-flip-without-a-new-buffer.patch`).
+- *Video from the user interface was black, and the user interface did not
+  come back after it.* Seen by the user on 2026-11-23 with Big Buck Bunny
+  from "Featured Video on Demand": the sound played, the picture was black,
+  and after BACK the display stayed black. On this host the launcher gave
+  the VM the host's GPU (virtio-gpu with virgl), which a Mac never gets;
+  the pipeline ran without an error (FFmpeg's decoder, `westerosrawsink`,
+  AAMP reporting progress), and Westeros drew its frames black. With the
+  drawing on the target's CPU (`llvmpipe`, as on the Mac) the card plays and
+  BACK shows the home screen again. For an RDK-E target the launcher now
+  takes emulated graphics unless `--graphics host` is given. Why virgl
+  shows the sink's buffers black was not looked for. The browser's own
+  player (the `rdke-video` check) showed its picture with either.
+- *The launcher's window gets the display over D-Bus on Linux too*, as on
+  macOS, for a display that the target's CPU renders (QEMU 8.2.2 has the
+  display; `emulator/graphics.py`, `window_endpoint`). Measured on
+  2026-11-23 as the pictures that reach the window in 10 s, host-native on
+  an Intel Core i7-10700K (8 cores, 16 threads): 59.9 a second at the home
+  screen with the VM's 4 CPUs. While Big Buck Bunny plays at 1920x1080 it
+  is the VM's CPUs that set the rate, since they decode and draw: 30.0 with
+  4 CPUs (`--cpus`; the default), 36 with 6, 56.5 with 8 and 59.3 with 12.
+  With 4 CPUs Thunder's process takes 2.1 of them and the web process 0.7.
+  Over VNC the window got 23 to 24 a second of the same video with 4 CPUs
+  (and none of a still screen, which VNC does not send again). Not
+  measured: the pictures the VM itself shows, a stream of 60 frames a
+  second, other hosts.
+  Why 4 CPUs are not enough here, looked into the same day: the time is
+  `llvmpipe`'s. Its four threads are each 57 % busy at 30 pictures a
+  second, about 19 ms of drawing for a picture where a refresh is 16.7 ms,
+  so every picture takes two refreshes (on the Mac the same threads were
+  27 % busy at 35). Two things that could have explained it did not:
+  with the VM's four CPU threads held on four separate cores of the host
+  (`taskset`) the rate stayed 30.0, and on two cores' sibling threads it
+  fell to 24, so the host's scheduler was not putting them badly; and with
+  Mesa alone built for `x86-64-v3` (AVX2; 72 thousand AVX instructions in
+  the driver where the `core2-64` build has 61) and put into a copy of the
+  image, the rate and the threads' load were the same, since `llvmpipe`
+  makes its drawing code at run time for the CPU it finds. The whole image
+  was not built with that tune: the parts outside Mesa take a quarter of
+  the time at most (the web process, 0.7 of a CPU).
+  The launcher therefore gives an RDK-E target in a host-native VM half of
+  the host's CPU threads when `--cpus` is not given, at least the usual 4
+  and at most 8 (`emulator/run.py`, `default_cpus`): 8 on this host. With
+  that default, in three runs of four: 60.0 at the home screen and 56.7 to
+  58.5 during the video, with `llvmpipe`'s eight threads 61 to 68 % busy.
+  The fourth run, the first after the change, gave 35 and 34 with the same
+  8 CPUs; what was different in it is not known.
+- *The image keeps 3 MB of journal*, which its services fill in a minute or
+  two. The stand-in for org.rdk.RDKShell therefore keeps its lines in
+  `/run/tvemu/rdkshell.log` as well, and the checks read both.
+- *Left as found:* Dobby ends with a segmentation fault at start, as on
+  ARM64; the Xcast plug-in's process leaves a crash dump at each boot;
+  `CONFIG_VIRTIO_INPUT` comes out as a module (the keys arrive through the
+  virtio serial port and do not need it); why the backend has no atomic
+  mode setting here was not looked for.
+
+The browser image for it (`rdke/build.sh --arch x86_64 --middleware 64
+tvemu-browser-image`, 9004 tasks) built in 113 minutes up to WebKit and 68
+more for WebKit, with 8 bitbake threads on 16 CPU threads; the kernel is
+10 MB and the root file system 948 MB. Started host-native under KVM, the
+kernel and init are up in 2 s. `rootfs-option`, `rdke-browser`,
+`rdke-launcher` and `rdke-video` pass with it (the browser's page at 27 to
+34 frames a second with emulated graphics, the video check's stream playing with the browser's
+processes at 137 % of one CPU, sound through virtio-snd to the host).
+
+Not done on the Linux host: the ARM64 image was not built or run there (it
+would run on a simulated CPU), and the smaller images (minimal, Wayland,
+Westeros, Thunder, middleware) were not built for x86-64 one by one. The
+x86-64 image was not tried on Windows or on an Intel Mac.
 
 ## Building the minimal image
 
     rdke/build.sh            # 64-bit programs, for a host-native VM
     rdke/build.sh 32         # RDK-E's own arrangement; not built yet
     rdke/build.sh 64 TARGET  # another image, such as tvemu-wayland-image
+    rdke/build.sh --arch x86_64 ...   # or arm64; the default is the host's CPU
 
-The image built last is the one in `build/rdke/arm64`.
+The image built last for a CPU architecture is the one in `build/rdke/ARCH`
+(`arm64` or `x86_64`). What follows was done with the ARM64 machine on macOS.
 
 builds openembedded-core's `core-image-minimal` for the machine, on RDK-E's
 common layers, in an Ubuntu 22.04 container, and copies the kernel and the
@@ -935,18 +1039,23 @@ process):
 
     ./emu run --mode vm --rootfs rdke [--window]
 
-The launcher does not build the image. It looks in `build/rdke/arm64` (or in
-the directory that `--option rdke-dir=DIR` names) for
+The launcher does not build the image. It looks in `build/rdke/ARCH` for the
+guest's CPU architecture, `arm64` or `x86_64` (or in the directory that
+`--option rdke-dir=DIR` names), for
 
-- the kernel, as `Image` (Yocto's name for it; `vmlinuz` is taken too),
+- the kernel, as `Image` or `bzImage` (Yocto's names for it; `vmlinuz` is
+  taken too),
 - the root file system, as `rootfs.ext4` (or `rootfs.img`): the image's
-  `.ext4` file from Yocto's `tmp/deploy/images/tvemu-arm64-rdke/`, copied
+  `.ext4` file from Yocto's `tmp/deploy/images/MACHINE/`, copied
   under that name,
 - and, only if the image has one, an initial RAM disk as `initrd.img`.
 
-It boots them in an ARM64 VM (`--arch native` on an ARM64 host, `--arch
-arm64` on others) with a virtio disk, network and display, and with the
-kernel command line `console=ttyAMA0 root=/dev/vda rootfstype=ext4 rw`. The
+It boots them in a VM of that architecture (`--arch native` for the host's
+own, which is the default; `--arch arm64` on an x86-64 host for the ARM64
+image on a simulated CPU) with a virtio disk, network and display, and with
+the kernel command line `console=ttyAMA0 root=/dev/vda rootfstype=ext4 rw`
+(`ttyS0` for x86-64). Where only the other architecture's image is built,
+the launcher names it. The
 root file system is not written to: changes are discarded when the VM ends.
 The target's console is in the terminal, boot messages included
 (`--option verbose-boot=no` turns them off).
@@ -956,9 +1065,9 @@ the shell can be used from a script as well:
 
     (sleep 10; echo 'uname -a'; sleep 2) | ./emu run --mode vm --rootfs rdke --timeout 20
 
-`./emu verify rootfs-option` checks this path with a stand-in, the ARM64
-Debian VM image started the same way, and with the image in
-`build/rdke/arm64` where a host has built one.
+`./emu verify rootfs-option` checks this path with a stand-in, the Debian
+VM image of the host's CPU architecture started the same way, and with the
+image in `build/rdke/ARCH` where a host has built one.
 
 ## What is checked
 
@@ -969,7 +1078,10 @@ runs Yocto's parser (bitbake) on them with this machine, in a container,
 once for each userland. Run on macOS (ARM64) on 2026-11-20: the configuration
 and all 2658 recipes parse with 0 errors in both, the kernel is `linux-yocto`
 5.15 for `qemuarm64` with this layer's four option files, and Mesa 22.0.3 has
-the `virgl` and `swrast` drivers.
+the `virgl` and `swrast` drivers. Run on Linux (x86-64) on 2026-11-23 for
+the x86-64 machine, which the script takes on an x86-64 host
+(`TVEMU_RDKE_ARCH=arm64` or `x86_64` chooses otherwise): 2688 recipes parse
+with 0 errors, with the 64-bit userland, the only one it has.
 
 That shows that the definition is consistent with RDK-E's common layers.
 That it builds and boots is shown by the minimal image above, with the
@@ -977,7 +1089,7 @@ That it builds and boots is shown by the minimal image above, with the
 
     ./emu verify rootfs-option rdke-browser rdke-launcher rdke-video
 
-`rootfs-option` boots whatever image is in `build/rdke/arm64` to its own
+`rootfs-option` boots whatever image is in `build/rdke/ARCH` to its own
 init. `rdke-browser` needs `tvemu-browser-image` there: it shows the image's
 page in RDK's browser, compares the picture that reaches the launcher's
 window, and sends remote control keys through the window to the page.

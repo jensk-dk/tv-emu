@@ -1,9 +1,11 @@
 #!/bin/bash
-# Checks that Yocto parses the machine tvemu-arm64-rdke together with RDK-E's
-# common layers, with a 64-bit and with a 32-bit userland. Nothing is built.
+# Checks that Yocto parses the machine tvemu-arm64-rdke (or tvemu-x86-64-rdke)
+# together with RDK-E's common layers, with a 64-bit and, for ARM64, with a
+# 32-bit userland. Nothing is built.
 #
-#   rdke/check-parse.sh
+#   [TVEMU_RDKE_ARCH=arm64|x86_64] rdke/check-parse.sh
 #
+# The machine is the one of the host's CPU unless TVEMU_RDKE_ARCH names one.
 # It fetches the layers that RDK-E's vendor manifest names (about 120 MB, to
 # build/rdke-check/layers, which is not version controlled) and runs bitbake
 # in an Ubuntu 22.04 container, since bitbake runs on Linux only. Needs git
@@ -30,9 +32,9 @@ EOT
 chmod +x "$work/in-container.sh"
 
 status=0
-for userland in 64 32; do
-  "$runtime" run --rm -v "$work:/work/rdk:ro" -v "$here/meta-tvemu-rdke:/work/meta-tvemu-rdke:ro" \
+for userland in 64 $([ "$arch" = arm64 ] && echo 32); do
+  "$runtime" run --rm -e TVEMU_MACHINE -v "$work:/work/rdk:ro" -v "$here/meta-tvemu-rdke:/work/meta-tvemu-rdke:ro" \
     tvemu-rdke-check /work/rdk/in-container.sh "$userland" || status=1
 done
-[ "$status" = 0 ] && echo "PASS: tvemu-arm64-rdke parses with both userlands" || echo "FAIL"
+[ "$status" = 0 ] && echo "PASS: $machine parses with $([ "$arch" = arm64 ] && echo "both userlands" || echo "its 64-bit userland")" || echo "FAIL"
 exit $status

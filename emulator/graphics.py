@@ -458,12 +458,12 @@ def window_endpoint(binary, plan):
     arguments, QEMU's display backend or None for the one already chosen,
     address for the window, directory to remove afterwards).
 
-    On macOS, for a display that the target's CPU renders, it is QEMU's D-Bus
+    On macOS and Linux, for a display that the target's CPU renders, it is QEMU's D-Bus
     display over a private socket (emulator/dbusdisplay.py, which says why);
     the address then starts with "dbus:". Everywhere else, and where this
     QEMU has no such display, it is QEMU's VNC server (vnc_endpoint).
     """
-    if host.host_os() == "macos" and plan["provider"] != "host" \
+    if host.host_os() in ("macos", "linux") and plan["provider"] != "host" \
             and "dbus" in _qemu_output(binary, "-display", "help").split():
         path, directory = _private_socket("display.sock")
         if path:

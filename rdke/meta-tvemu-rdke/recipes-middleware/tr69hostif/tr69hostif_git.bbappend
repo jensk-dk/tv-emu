@@ -8,5 +8,5 @@ SRC_URI:append:tvemu = " file://0001-yajl-buffer-length-is-a-size_t.patch"
 # It also casts small numbers to pointers and back, as keys of hash tables.
 # That works with pointers of either size, and is an error under its own
 # -Werror where the two sizes differ.
-CFLAGS:append:aarch64 = " -Wno-error=int-to-pointer-cast -Wno-error=pointer-to-int-cast"
-CXXFLAGS:append:aarch64 = " -Wno-error=int-to-pointer-cast -Wno-error=pointer-to-int-cast -fpermissive"
+CFLAGS:append:tvemu64 = " -Wno-error=int-to-pointer-cast -Wno-error=pointer-to-int-cast"
+CXXFLAGS:append:tvemu64 = " -Wno-error=int-to-pointer-cast -Wno-error=pointer-to-int-cast -fpermissive"

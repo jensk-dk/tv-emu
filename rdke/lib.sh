@@ -7,6 +7,16 @@ layers="$work/layers"
 runtime=${EMU_CONTAINER_RUNTIME:-$(command -v docker >/dev/null 2>&1 && echo docker || echo podman)}
 mkdir -p "$layers"
 
+# The machine: tvemu-arm64-rdke or tvemu-x86-64-rdke, the one whose programs
+# the host's CPU runs unless TVEMU_RDKE_ARCH (arm64 or x86_64) says otherwise.
+arch=${TVEMU_RDKE_ARCH:-$(uname -m)}
+case "$arch" in
+  arm64|aarch64) arch=arm64; machine=tvemu-arm64-rdke ;;
+  x86_64|amd64) arch=x86_64; machine=tvemu-x86-64-rdke ;;
+  *) echo "no RDK-E machine for the CPU architecture $arch (arm64 or x86_64)" >&2; exit 2 ;;
+esac
+export TVEMU_MACHINE=$machine
+
 # Repository, tag, directory: as in rdke-common-layers.xml and
 # rdke-configs-layers.xml of rdke-generic-manifest 1.1.1, and
 # vendor-manifest-raspberrypi (develop, 2026-11-20).
@@ -106,7 +116,7 @@ cat > "$work/configure.sh" <<'EOT'
 L=/work/rdk/layers
 export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
 source $L/poky/oe-init-build-env "$1" >/dev/null
-sed -e "s/##MACHINE##/tvemu-arm64-rdke/" -e "s/##DISTRO_CODENAME##/kirkstone/g" \
+sed -e "s/##MACHINE##/${TVEMU_MACHINE:-tvemu-arm64-rdke}/" -e "s/##DISTRO_CODENAME##/kirkstone/g" \
     $L/meta-vendor-raspberrypi-dev/conf/template/local.conf.sample > conf/local.conf
 cat >> conf/local.conf <<EOC
 RDK_TOOLS_PACKAGES = ""
