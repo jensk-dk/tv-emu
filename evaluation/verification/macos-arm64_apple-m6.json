@@ -594,9 +594,9 @@
         "host output device: H\u00f8jttalere i Mac mini, at volume 0; it played for 32.1 s by its own clock, 14.4 s of that the target's sound",
         "the host's audio server reported the player process as playing on: H\u00f8jttalere i Mac mini"
       ],
-      "checked_at": "2026-11-23T19:23:27Z",
-      "seconds": 33.3,
-      "revision": "97b4069fc65ecbc06a5c7142d900fe367c4d201c",
+      "checked_at": "2026-11-23T19:52:22Z",
+      "seconds": 33.2,
+      "revision": "797dbc2c716e6b7181812fc14941d63cc840c4dc",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     },
     "audio-mute-container": {
@@ -2177,12 +2177,12 @@
       "description": "RDK's browser shows a page in an RDK-E image and gets the remote control's keys",
       "details": [
         "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest, and RDK's browser plug-in HtmlApp (WPE WebKit) showed the image's page on a display of RDK's window manager: tvemu-app-start: HtmlApp shows file:///usr/share/tvemu/page/index.html on wst-htmlapp (1920x1080)",
-        "the launcher's window got the page's picture at 1920x1080: its red corner blocks and its background are where the page draws them; the plug-in reports 42 frames a second",
+        "the launcher's window got the page's picture at 1920x1080: its red corner blocks and its background are where the page draws them; the plug-in reports 39 frames a second",
         "13 remote control keys sent from the window arrived in the page, each with a web page's name and code for it: ok as Enter, up as ArrowUp, down as ArrowDown, left as ArrowLeft, right as ArrowRight, back as Backspace, 1 as 1, play as MediaPlay, red as ColorF0Red, green as ColorF1Green, yellow as ColorF2Yellow, blue as ColorF3Blue, exit as Escape"
       ],
-      "checked_at": "2026-11-23T19:22:06Z",
-      "seconds": 33.1,
-      "revision": "97b4069fc65ecbc06a5c7142d900fe367c4d201c",
+      "checked_at": "2026-11-23T19:51:21Z",
+      "seconds": 33.0,
+      "revision": "797dbc2c716e6b7181812fc14941d63cc840c4dc",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     },
     "rdke-launcher": {
@@ -2194,9 +2194,9 @@
         "the image's stand-in answered the call (RDK-E's middleware has org.rdk.RDKWindowManager in its place) and names the application as resumed; the OK key arrived in the application",
         "the EXIT key went to the user interface, which ended the application: it is no longer in org.rdk.RDKShell's getState, its page is off the display, and the user interface has its display"
       ],
-      "checked_at": "2026-11-23T19:22:54Z",
-      "seconds": 47.4,
-      "revision": "97b4069fc65ecbc06a5c7142d900fe367c4d201c",
+      "checked_at": "2026-11-23T19:51:48Z",
+      "seconds": 27.6,
+      "revision": "797dbc2c716e6b7181812fc14941d63cc840c4dc",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     },
     "rdke-video": {
@@ -2205,15 +2205,15 @@
       "description": "RDK's browser plays video with sound in an RDK-E image, and both reach the host",
       "details": [
         "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest, and RDK's browser plug-in HtmlApp (WPE WebKit) played the image's H.264 and AAC reference stream from a page: its player reports it playing at 1280x720, with its time moving",
-        "the launcher's window got the stream's picture, full screen at 1920x1080: its four corner blocks and its marker block have the stream's colours; decoding and drawing are done on the target's CPU, with the browser's processes at 193% of one CPU",
-        "the stream's 880 Hz tone reached the host-side process in 110 tenths of a second; path: target sound card (0 [SoundCard      ]: virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe",
+        "the launcher's window got the stream's picture, full screen at 1920x1080: its four corner blocks and its marker block have the stream's colours; decoding and drawing are done on the target's CPU, with the browser's processes at 206% of one CPU",
+        "the stream's 880 Hz tone reached the host-side process in 107 tenths of a second; path: target sound card (0 [SoundCard      ]: virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe",
         "the tone was recorded at the host's audio output",
-        "host output device: H\u00f8jttalere i Mac mini, at volume 0; it played for 17.0 s by its own clock, 12.1 s of that the target's sound",
+        "host output device: H\u00f8jttalere i Mac mini, at volume 0; it played for 16.9 s by its own clock, 12.0 s of that the target's sound",
         "the host's audio server reported the player process as playing on: H\u00f8jttalere i Mac mini"
       ],
-      "checked_at": "2026-11-23T19:21:33Z",
+      "checked_at": "2026-11-23T19:50:48Z",
       "seconds": 33.4,
-      "revision": "97b4069fc65ecbc06a5c7142d900fe367c4d201c",
+      "revision": "797dbc2c716e6b7181812fc14941d63cc840c4dc",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     }
   }

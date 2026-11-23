@@ -405,6 +405,21 @@ Run after it, in the browser image: `dobby.service` is active, no unit has
 failed, and `DobbyTool list` answers "no containers". No container was
 started with it.
 
+**The SSH server did not start; repaired.** At start-up the console showed
+"Failed to start SSH Per-Connection Server", again every five seconds. RDK's
+start script for it (`/lib/rdk/start_ssh.sh`) ends with
+"DROPBEAR_RSAKEY_DIR is not set" unless `/etc/default/dropbear` names the
+directory of the host key. A vendor layer writes that for its images and has
+the key made there; the Pi's does it in two image steps
+(`meta-vendor-raspberrypi-release`, `conf/machine/include/vendor.inc`), and
+this layer had neither. `tvemu-middleware-image.bb` now has both, with the
+Pi's directory (`/opt/dropbear`). Run after it on 2026-11-23, in the browser
+image: the key is made at the first start, `dropbear.service` is active and
+listens on the VM's port 22, and no unit has failed. No log-in was tried.
+The server takes root without a password, as RDK's development builds do;
+the launcher forwards no port to the VM, so it is reached from inside the VM
+only.
+
 **What RDK-E's code assumes of 32-bit ARM.** Found by building and running
 it as 64-bit programs; each is handled in this layer, with a comment at the
 place:

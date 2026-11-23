@@ -33,3 +33,29 @@ dobby_generic_config_patch () {
     fi
 }
 ROOTFS_POSTPROCESS_COMMAND += "dobby_generic_config_patch; "
+
+# The SSH server (dropbear.service). RDK's start script for it ends with
+# "DROPBEAR_RSAKEY_DIR is not set" unless /etc/default/dropbear names the
+# directory of the host key, and the unit that makes the key is to make it
+# there and not look for it in /etc and /var. A vendor layer does both for its
+# images; these are the two steps of the Pi's (meta-vendor-raspberrypi-release,
+# conf/machine/include/vendor.inc), with its directory.
+DROPBEAR_RSAKEY_DIR ?= "/opt/dropbear"
+
+update_dropbearkey_to_rw_path () {
+    if [ -f "${IMAGE_ROOTFS}/lib/systemd/system/dropbearkey.service" ]; then
+        sed -i '/\/var/d; /\/var\/lib/d;/\/etc\/dropbear/d' ${IMAGE_ROOTFS}/lib/systemd/system/dropbearkey.service
+    fi
+}
+
+override_dropbear_rsakey_dir () {
+    dropbear_conf="${IMAGE_ROOTFS}/etc/default/dropbear"
+    if [ -f "$dropbear_conf" ]; then
+        if grep -q '^DROPBEAR_RSAKEY_DIR=' "$dropbear_conf"; then
+            sed -i "s|^DROPBEAR_RSAKEY_DIR=.*|DROPBEAR_RSAKEY_DIR=\"${DROPBEAR_RSAKEY_DIR}\"|" "$dropbear_conf"
+        else
+            echo "DROPBEAR_RSAKEY_DIR=\"${DROPBEAR_RSAKEY_DIR}\"" >> "$dropbear_conf"
+        fi
+    fi
+}
+ROOTFS_POSTPROCESS_COMMAND += "update_dropbearkey_to_rw_path; override_dropbear_rsakey_dir; "
