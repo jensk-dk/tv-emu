@@ -111,9 +111,27 @@ everything here was found by building and running it, on the Linux host
   AAMP reporting progress), and Westeros drew its frames black. With the
   drawing on the target's CPU (`llvmpipe`, as on the Mac) the card plays and
   BACK shows the home screen again. For an RDK-E target the launcher now
-  takes emulated graphics unless `--graphics host` is given. Why virgl
-  shows the sink's buffers black was not looked for. The browser's own
-  player (the `rdke-video` check) showed its picture with either.
+  takes emulated graphics unless `--graphics host` is given. The browser's
+  own player (the `rdke-video` check) showed its picture with either.
+- *Why it was black with the host's GPU, and the cure* (2026-11-24). The
+  sink writes each frame through the CPU's memory into two buffers of the
+  DRM device, and Westeros makes an OpenGL ES image of each. With virgl
+  such an image is the host's texture of the buffer: what the guest wrote
+  is never taken to it, and it has the format the buffer was made with (32
+  bits per pixel), not the one asked for. Westeros' renderer now copies the
+  two planes into textures where the renderer is virgl
+  (`recipes-graphics/westeros/files/0002-copy-video-planes-where-the-renderer-is-virgl.patch`;
+  `WESTEROS_RENDER_COPY_VIDEO` in Thunder's environment, 1 or 0, says so
+  for any renderer). With `--graphics host` Big Buck Bunny now plays with
+  its picture and BACK shows the home screen again (seen in captures of the
+  launcher's window, two runs), and the VM's 4 CPUs are 77 % idle during the
+  1920x1080 stream. The launcher's window got 22.5 pictures a second of it
+  all the same: a display that the host's GPU draws reaches the window over
+  VNC, not over D-Bus (the D-Bus display would hand over the GPU's own
+  buffers, which the window does not take yet). So emulated graphics stays
+  the default for an RDK-E target. Only `libwesteros_render_embedded`, the
+  renderer RDK's window manager loads, has the change; the copy was not
+  timed, and the frame rate inside the VM was not measured.
 - *The launcher's window gets the display over D-Bus on Linux too*, as on
   macOS, for a display that the target's CPU renders (QEMU 8.2.2 has the
   display; `emulator/graphics.py`, `window_endpoint`). Measured on

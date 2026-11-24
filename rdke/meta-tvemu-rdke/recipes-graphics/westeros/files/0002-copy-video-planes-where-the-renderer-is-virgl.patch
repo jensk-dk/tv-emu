@@ -1,0 +1,199 @@
+A video sink that has no decoder of the device (westerosrawsink) writes each
+frame through the CPU's memory into two buffers of the DRM device (brightness,
+colour) and hands them to Westeros, which makes an image of each buffer for
+OpenGL ES. With virtio-gpu's virgl (the host's GPU draws for the VM) such an
+image is the host's texture of the buffer: what the guest wrote is never
+taken to it, and it has the format the buffer was made with (32 bits per
+pixel), not the one asked for. The video was black, and the user interface
+did not come back after it.
+
+Where the renderer is virgl, the two planes are now copied into textures of
+one and two bytes per pixel, which the shader for two planes reads as it
+reads the images. WESTEROS_RENDER_COPY_VIDEO in the environment asks for the
+copy with any renderer (1) or with none (0).
+
+Upstream-Status: Pending
+
+--- a/westeros-render-embedded.cpp
++++ b/westeros-render-embedded.cpp
+@@ -22,6 +22,7 @@
+ #include <assert.h>
+ #include <dlfcn.h>
+ #include <sys/time.h>
++#include <sys/mman.h>
+ 
+ #include <EGL/egl.h>
+ #include <EGL/eglext.h>
+@@ -240,6 +241,11 @@
+ 
+    unsigned char *mem;
+    bool memDirty;
++   /* Copies of a video frame's two planes (see copyVideoPlanes) */
++   unsigned char *planeMem[2];
++   int planeWidth[2];
++   int planeHeight[2];
++   bool planeDirty;
+    int memWidth;
+    int memHeight;
+    int memStride;
+@@ -295,6 +301,8 @@
+    bool haveDmaBufImport;
+    bool haveDmaBufImportModifiers;
+    bool haveExternalImage;
++   /* A video frame's planes are copied into textures, not imported as images */
++   bool copyVideoPlanes;
+ 
+    #if defined (WESTEROS_HAVE_WAYLAND_EGL)
+    bool haveWaylandEGL;
+@@ -626,6 +634,22 @@
+       printf("have dmabuf import: %d\n", rendererEMB->haveDmaBufImport );
+       printf("have dmabuf import modifiers: %d\n", rendererEMB->haveDmaBufImportModifiers );
+       printf("have external image: %d\n", rendererEMB->haveExternalImage );
++      {
++         /* A video sink without a decoder of the device writes its frames
++            through the CPU's memory into buffers of the DRM device. With
++            virtio-gpu's virgl the image made of such a buffer is the host's
++            texture, which never gets what the guest wrote, and which has
++            another format than the one asked for: the picture is black. So
++            there the planes are copied into textures. WESTEROS_RENDER_COPY_VIDEO
++            in the environment says so for any renderer (1) or for none (0). */
++         const char *name= (const char *)glGetString(GL_RENDERER);
++         const char *version= (const char *)glGetString(GL_VERSION);
++         const char *env= getenv("WESTEROS_RENDER_COPY_VIDEO");
++         bool haveRG= (extensions && strstr( extensions, "GL_EXT_texture_rg" )) ||
++                      (version && (strstr( version, "OpenGL ES 3" ) || !strstr( version, "OpenGL ES" )));
++         rendererEMB->copyVideoPlanes= haveRG && (env ? (atoi(env) != 0) : (name && strstr( name, "virgl" )));
++         printf("copy video planes: %d (renderer %s)\n", rendererEMB->copyVideoPlanes, name ? name : "?" );
++      }
+       #endif
+    }
+ 
+@@ -773,9 +797,73 @@
+            free( surface->mem );
+            surface->mem= 0;
+         }
++        for( int i= 0; i < 2; ++i )
++        {
++           if ( surface->planeMem[i] )
++           {
++              free( surface->planeMem[i] );
++              surface->planeMem[i]= 0;
++           }
++        }
++        surface->planeDirty= false;
+     }
+ }
+ 
++#ifndef GL_RED_EXT
++#define GL_RED_EXT 0x1903
++#endif
++#ifndef GL_RG_EXT
++#define GL_RG_EXT 0x8227
++#endif
++
++/* Copies the two planes of an NV12 frame (brightness; colour, two bytes for
++   each sample) out of their buffers. False if a buffer cannot be mapped. */
++static bool wstRendererEMBCopyVideoPlanes( WstRenderSurface *surface, int *fd, int32_t *offset, int32_t *stride,
++                                           int frameWidth, int frameHeight )
++{
++   for( int i= 0; i < 2; ++i )
++   {
++      int width= (i == 0 ? frameWidth : frameWidth/2);
++      int height= (i == 0 ? frameHeight : frameHeight/2);
++      int rowBytes= (i == 0 ? width : width*2);
++      size_t length= (size_t)offset[i] + (size_t)stride[i]*height;
++      if ( (fd[i] < 0) || (stride[i] < rowBytes) || (height <= 0) )
++      {
++         return false;
++      }
++      unsigned char *data= (unsigned char*)mmap( NULL, length, PROT_READ, MAP_SHARED, fd[i], 0 );
++      if ( data == MAP_FAILED )
++      {
++         return false;
++      }
++      if ( surface->planeMem[i] && ((surface->planeWidth[i] != width) || (surface->planeHeight[i] != height)) )
++      {
++         free( surface->planeMem[i] );
++         surface->planeMem[i]= 0;
++      }
++      if ( !surface->planeMem[i] )
++      {
++         surface->planeMem[i]= (unsigned char*)malloc( (size_t)rowBytes*height );
++      }
++      if ( surface->planeMem[i] )
++      {
++         for( int row= 0; row < height; ++row )
++         {
++            memcpy( surface->planeMem[i] + (size_t)row*rowBytes, data + offset[i] + (size_t)row*stride[i], rowBytes );
++         }
++         surface->planeWidth[i]= width;
++         surface->planeHeight[i]= height;
++      }
++      munmap( data, length );
++      if ( !surface->planeMem[i] )
++      {
++         return false;
++      }
++   }
++   surface->planeDirty= true;
++   return true;
++}
++
+ static void wstRendererEMBPrepareResource( WstRendererEMB *renderer, WstRenderSurface *surface, struct wl_resource *resource )
+ {
+    if ( surface && resource )
+@@ -889,6 +977,13 @@
+                            fd[1]= fd[0];
+                         }
+ 
++                        if ( renderer->copyVideoPlanes && (frameFormat == WL_SB_FORMAT_NV12) &&
++                             wstRendererEMBCopyVideoPlanes( surface, fd, offset, stride, frameWidth, frameHeight ) )
++                        {
++                           surface->textureCount= 2;
++                           break;
++                        }
++
+                         i= 0;
+                         attr[i++]= EGL_WIDTH;
+                         attr[i++]= frameWidth;
+@@ -1736,7 +1831,7 @@
+ 
+ static void wstRendererEMBRenderSurface( WstRendererEMB *renderer, WstRenderSurface *surface )
+ {
+-   if ( (surface->textureId[0] == GL_NONE) || surface->memDirty || surface->externalImage )
++   if ( (surface->textureId[0] == GL_NONE) || surface->memDirty || surface->externalImage || surface->planeDirty )
+    {
+       for ( int i= 0; i < surface->textureCount; ++i )
+       {
+@@ -1748,6 +1843,15 @@
+          /* Bind the egl image as a texture */
+          glActiveTexture(GL_TEXTURE1+i);
+          glBindTexture(GL_TEXTURE_2D, surface->textureId[i] );
++         if ( (i < 2) && surface->planeMem[i] )
++         {
++            GLenum format= (i == 0 ? GL_RED_EXT : GL_RG_EXT);
++            glPixelStorei( GL_UNPACK_ALIGNMENT, 1 );
++            glTexImage2D( GL_TEXTURE_2D, 0, format, surface->planeWidth[i], surface->planeHeight[i], 0,
++                          format, GL_UNSIGNED_BYTE, surface->planeMem[i] );
++            glPixelStorei( GL_UNPACK_ALIGNMENT, 4 );
++         }
++         else
+          #if defined (WESTEROS_PLATFORM_EMBEDDED) || defined (WESTEROS_HAVE_WAYLAND_EGL)
+          if ( surface->eglImage[i] && renderer->eglContext )
+          {
+@@ -1787,6 +1891,7 @@
+          glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+          glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+       }
++      surface->planeDirty= false;
+    }
+ 
+    if ( !surface->sizeOverride )
+@@ -2236,6 +2341,7 @@
+             surface->eglImage[0] ||
+             #endif
+             surface->memDirty ||
++            surface->planeDirty ||
+             (surface->textureId[0] != GL_NONE)
+           )
+         )

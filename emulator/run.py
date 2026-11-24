@@ -204,9 +204,9 @@ def launch(opts):
     if not opts.cpus:
         opts.cpus = default_cpus(rdke, opts.arch in ("native", host.host_arch()))
     # The RDK-E image draws on the target's CPU (Mesa's llvmpipe) unless host
-    # graphics is asked for. With the host's GPU (virgl) Westeros shows the
-    # video frames of RDK's player (AAMP) as black, and the user interface
-    # does not come back after them (rdke/README.md).
+    # graphics is asked for. A display that the host's GPU draws (virgl)
+    # reaches the launcher's window over VNC only, at about 22 pictures a
+    # second, where one drawn on the target's CPU gets 60 (rdke/README.md).
     rdke_emulated = rdke and (opts.graphics or "auto") == "auto"
     if rdke_emulated:
         opts.graphics = "emulated"
@@ -404,7 +404,8 @@ def launch(opts):
             display = _display_plan(opts, lambda: graphics.probe_vm(qemu, None if own else kind), kind, always=rdke)
             if display and rdke_emulated:
                 display.update({"requested": "auto",
-                                "reason": "the RDK-E image's video is black with host graphics acceleration; "
+                                "reason": "the launcher's window gets the RDK-E image's display at about 22 pictures a "
+                                          "second with host graphics acceleration, and at 60 without; "
                                           "--graphics host asks for it all the same"})
             display_args, display_backend, display_device = [], "none", None
             vnc = None

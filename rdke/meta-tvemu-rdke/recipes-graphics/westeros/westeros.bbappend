@@ -14,6 +14,11 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 SRC_URI:append = " file://0001-finish-drawing-before-a-client-buffer-is-given-back.patch"
 CXXFLAGS:append = " -DWESTEROS_RENDER_FINISH"
 
+# With the host's GPU (virtio-gpu's virgl) a video frame that the sink wrote
+# into buffers of the DRM device cannot be read as an image: the planes are
+# copied into textures there (see the patch).
+SRC_URI:append = " file://0002-copy-video-planes-where-the-renderer-is-virgl.patch"
+
 # libwayland-egl is a package of its own in RDK-E's layers.
 DEPENDS:append = " wayland-default-egl virtual/egl"
 RDEPENDS:${PN}:append = " wayland-default-egl"
