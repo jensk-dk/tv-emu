@@ -1,0 +1,25 @@
+basename() is declared before it is called
+
+gdial-plat-util.c calls basename() with no declaration of it in sight:
+<string.h> declares it only under _GNU_SOURCE. The C compiler then takes its
+result to be an int. On 32-bit ARM that is the whole pointer. On a 64-bit
+machine the pointer loses its upper half, and the first message the library
+logs ends the process with a segmentation fault in fprintf(): the XCast
+plug-in's process, a few seconds after Thunder starts.
+
+Upstream-Status: Pending [not yet offered to rdkcentral/xdialserver]
+
+--- a/server/plat/gdial-plat-util.c	2026-11-23 22:40:30
++++ b/server/plat/gdial-plat-util.c	2026-11-23 22:40:30
+@@ -17,6 +17,11 @@
+  * limitations under the License.
+  */
+ 
++/* For basename() of <string.h>: without a declaration its result is taken
++ * to be an int, and a pointer of 64 bits loses its upper half. */
++#ifndef _GNU_SOURCE
++#define _GNU_SOURCE
++#endif
+ #include <stdio.h>
+ #include <string.h>
+ #include <unistd.h>

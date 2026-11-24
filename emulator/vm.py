@@ -196,6 +196,45 @@ def remote_port_arguments(binary, port):
             "-device", "virtserialport,chardev=emu-remote,name=%s" % REMOTE_PORT_NAME]
 
 
+# Ports of the target that a run makes reachable from this host: --option
+# forward=HOST:TARGET[,HOST:TARGET...]. QEMU listens on the loopback address
+# only: a target may let anyone in who reaches it (the RDK-E image's SSH
+# server asks root for no password).
+FORWARD_OPTION = "forward"
+
+
+def forwarded_ports(options):
+    """The (host port, target port) pairs that the options ask to have
+    forwarded; raises EmuError for what is not such a list."""
+    pairs = []
+    for item in str((options or {}).get(FORWARD_OPTION) or "").split(","):
+        if not item.strip():
+            continue
+        parts = item.strip().split(":")
+        if len(parts) != 2 or not all(part.isdigit() and 0 < int(part) < 65536 for part in parts):
+            raise EmuError("--option %s=%s: %r is not HOST:TARGET, two port numbers from 1 to 65535"
+                           % (FORWARD_OPTION, options[FORWARD_OPTION], item.strip()),
+                           hint="for example --option %s=2222:22,9998:9998" % FORWARD_OPTION)
+        pairs.append((int(parts[0]), int(parts[1])))
+    taken = [port for port, _ in pairs]
+    if len(set(taken)) != len(taken):
+        raise EmuError("--option %s names a port of this host twice: %s" % (FORWARD_OPTION, options[FORWARD_OPTION]))
+    return pairs
+
+
+def require_free_ports(options):
+    """Raises EmuError when a port that is to be forwarded is in use on this
+    host: QEMU would end with a message that does not name the option."""
+    for port, target in forwarded_ports(options):
+        try:
+            socket.create_server(("127.0.0.1", port)).close()
+        except OSError as error:
+            raise EmuError("port %d of this host, which --option %s forwards to the target's port %d, cannot be "
+                           "listened on: %s" % (port, FORWARD_OPTION, target,
+                                                str(error.strerror or error).split(" (while")[0]),
+                           hint="name another port of this host before the colon")
+
+
 def plain_command_line(guest, verbose=True):
     """The kernel command line for a root file system that is not the
     launcher's own (emulator/rootfs.py): it starts its own init, and takes
@@ -234,7 +273,9 @@ def run_command(resolved, artifacts, data_disk, cmdline, cpus, memory_mb, consol
     if data_disk:
         command += ["-drive", "if=none,id=data,format=raw,file=%s%s" % (_escape(data_disk), cache),
                     "-device", "virtio-blk-pci,drive=data"]
-    command += ["-netdev", "user,id=net0", "-device", "virtio-net-pci,netdev=net0"]
+    command += ["-netdev", "user,id=net0" + "".join(",hostfwd=tcp:127.0.0.1:%d-:%d" % pair
+                                                    for pair in forwarded_ports(options)),
+                "-device", "virtio-net-pci,netdev=net0"]
     if console:
         backend = "socket,id=console,host=127.0.0.1,port=%d" % console.port
     else:

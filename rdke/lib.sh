@@ -63,6 +63,28 @@ fi
 MEDIA_SHA256=0f236ef37b7a6ab1960b0aff0696fd29c4dd1b27b71c59a26a4fd6021b00c125
 fetch_media() {
   media="$here/meta-tvemu-rdke/recipes-apps/tvemu-media/files/avc.mp4"
+  fetch_media_stream && fetch_media_hls
+}
+
+# The same stream as an HLS stream, for RDK's player (AAMP): the stream of
+# avc.mp4, not encoded again, in segments of a second (hls/avc.m3u8).
+fetch_media_hls() {
+  hls="$(dirname "$media")/hls"
+  [ -f "$hls/avc.m3u8" ] && return 0
+  echo "making the reference stream's HLS form (hls/avc.m3u8)"
+  rm -rf "$hls.new" && mkdir -p "$hls.new"
+  "$runtime" run --rm -v "$(dirname "$media"):/src:ro" docker.io/library/debian:trixie-slim sh -c '
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq > /dev/null && apt-get install -y -qq --no-install-recommends ffmpeg > /dev/null &&
+    mkdir -p /out/hls && cd /out/hls &&
+    ffmpeg -nostdin -hide_banner -v error -y -fflags +bitexact -i /src/avc.mp4 -c copy -f hls -hls_time 1 \
+      -hls_playlist_type vod -hls_flags independent_segments -hls_segment_filename "avc-%d.ts" avc.m3u8 &&
+    tar -cf - -C /out/hls .' | tar -xf - -C "$hls.new" && [ -f "$hls.new/avc.m3u8" ] || {
+    rm -rf "$hls.new"; echo "the reference stream's HLS form could not be made" >&2; return 1; }
+  rm -rf "$hls" && mv "$hls.new" "$hls"
+}
+
+fetch_media_stream() {
   [ -f "$media" ] && return 0
   echo "making the reference stream avc.mp4 (target/media/build-media.sh)"
   "$runtime" run --rm -v "$here/../target/media:/src/media:ro" docker.io/library/debian:trixie-slim sh -c '

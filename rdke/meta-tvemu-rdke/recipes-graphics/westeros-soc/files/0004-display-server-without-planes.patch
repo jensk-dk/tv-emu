@@ -1,0 +1,44 @@
+Start the display server when planes are not used
+
+The display server (the socket "display" in XDG_RUNTIME_DIR, which
+westeros-gl-console and a device settings hardware layer talk to: "get
+mode", "set mode", "set display enable") is started in the block that looks
+for planes. With WESTEROS_GL_NO_PLANES that block is left out, and the
+server with it: the hardware layer could not ask for the mode, and RDK's
+display settings gave the resolution it had in store instead of the
+display's. The server does not depend on planes; it is started for the
+master context in either case.
+
+Upstream-Status: Pending
+
+--- a/westeros-gl/westeros-gl.c
++++ b/westeros-gl/westeros-gl.c
+@@ -5356,6 +5356,28 @@
+          }
+       }
+       #endif
++
++      /* Without planes (WESTEROS_GL_NO_PLANES) the block above is left out,
++       * and the display server with it: nothing could ask for the mode or
++       * turn the display off (westeros-gl-console). It serves the master
++       * context whether there are planes or not. */
++      if ( ctx->isMaster && !gDisplayServer )
++      {
++         if ( !gCtx )
++         {
++            gCtx= ctx;
++         }
++         gDisplayServer= (DisplayServerCtx*)calloc( 1, sizeof(DisplayServerCtx) );
++         if ( gDisplayServer )
++         {
++            if ( !wstInitDisplayServer( gDisplayServer ) )
++            {
++               ERROR("wstInitCtx: failed to initialize display server");
++               free( gDisplayServer );
++               gDisplayServer= 0;
++            }
++         }
++      }
+ 
+       if ( ctx->isMaster )
+       {

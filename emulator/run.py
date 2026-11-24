@@ -39,6 +39,8 @@ KNOWN_OPTIONS = {
     "venus": "VM mode with host graphics: map Vulkan to the host GPU too (yes/no, default: when QEMU offers it on Linux)",
     "window": "VM mode with a window: qemu shows the display in QEMU's own window, which has no toolbar and takes "
               "no remote control keys (default: the launcher's window wherever it can show the display)",
+    vm.FORWARD_OPTION: "VM mode: ports of the target reached from this host's loopback address, as "
+                       "HOST:TARGET[,HOST:TARGET...], such as 2222:22 (default: none)",
     rootfs.RDKE_DIR_OPTION: "--rootfs rdke: the directory with the RDK-E image's kernel and root file system "
                             "(default: build/rdke/ARCH, with the guest's CPU architecture)",
 }
@@ -202,7 +204,9 @@ def launch(opts):
     if rdke:
         _require_rdke(opts)
     if not opts.cpus:
-        opts.cpus = default_cpus(rdke, opts.arch in ("native", host.host_arch()))
+        # (The host's architecture is asked for only where the answer matters: on macOS that
+        # starts a program, which a run that is refused before anything is started does not do.)
+        opts.cpus = default_cpus(rdke, rdke and (opts.arch == "native" or opts.arch == host.host_arch()))
     # The RDK-E image draws on the target's CPU (Mesa's llvmpipe) unless host
     # graphics is asked for. A display that the host's GPU draws (virgl)
     # reaches the launcher's window over VNC only, at about 22 pictures a
@@ -281,6 +285,9 @@ def launch(opts):
         if opts.mode == "container":
             if opts.arch != "native":
                 raise EmuError("container mode runs the host's CPU architecture; --arch applies to VM mode")
+            if vm.forwarded_ports(opts.options):
+                raise EmuError("--option %s forwards ports of a VM; a container's are not forwarded by the launcher"
+                               % vm.FORWARD_OPTION, hint="add --mode vm")
             runtime = container.detect()
             arch = host.host_arch()
             manifest = image.ensure("container", lambda: runtime, arch, quiet=opts.quiet_build, rebuild=opts.rebuild)
@@ -454,6 +461,9 @@ def launch(opts):
                                                  plan.kernel_settings)
             if interactive and not attached and host.host_os() == "windows":
                 console = vm.Console()
+            vm.require_free_ports(opts.options)
+            for port, target in vm.forwarded_ports(opts.options):
+                outcome.notes.append("the target's port %d is reached at 127.0.0.1:%d of this host" % (target, port))
             command, binary = vm.run_command(
                 resolved, image.artifact_dir("vm", guest), data_disk, cmdline, opts.cpus, opts.memory_mb,
                 on_terminal, display_args + plan.qemu_args + opts.extra_args, opts.options, display_backend, console,

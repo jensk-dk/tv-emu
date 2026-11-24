@@ -1,0 +1,32 @@
+The display's description from the virtual device where the monitor has none
+
+tv-emu's launcher starts the VM without QEMU's description of its monitor
+(EDID), since that one names a mode of 75 pictures a second first. The
+connector's "edid" file is then empty, and with it the list of resolutions
+the television supports and everything else read from the description. The
+virtual device has a description of its own in /etc/tvemu/edid (a television
+with 1920x1080 at 60 as its own mode), which is read when the connector gives
+none.
+
+Upstream-Status: Inappropriate [tv-emu virtual machine]
+
+--- a/dshalUtils.c
++++ b/dshalUtils.c
+@@ -455,6 +455,17 @@
+         fclose(edidFile);
+ 
+         if (*length <= 0) {
++            /* tv-emu: the VM's monitor may come without a description (the
++             * launcher leaves QEMU's out, whose first mode is not one of a
++             * television). The virtual device has one of its own. */
++            FILE *ownFile = fopen("/etc/tvemu/edid", "rb");
++            if (ownFile) {
++                *length = (int)fread(edid, 1, DSHALUTILS_EDID_MAX_BYTES, ownFile);
++                fclose(ownFile);
++            }
++        }
++
++        if (*length <= 0) {
+             closedir(drmClass);
+             return -1;
+         }

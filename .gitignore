@@ -4,3 +4,4 @@ __pycache__/
 .history
 # Made by rdke/build.sh (rdke/lib.sh, fetch_media)
 rdke/meta-tvemu-rdke/recipes-apps/tvemu-media/files/avc.mp4
+rdke/meta-tvemu-rdke/recipes-apps/tvemu-media/files/hls/

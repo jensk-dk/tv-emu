@@ -190,6 +190,19 @@ would run on a simulated CPU), and the smaller images (minimal, Wayland,
 Westeros, Thunder, middleware) were not built for x86-64 one by one. The
 x86-64 image was not tried on Windows or on an Intel Mac.
 
+The x86-64 image was built again on Linux on 2026-11-24 with the Mac's
+repairs of 2026-11-23 that were in the repository by then (Dobby's settings
+file, the SSH server's key directory, the Bluetooth manager; see "Left as
+found" above). It does not have the repair of the DIAL library, which was
+not yet in the repository, nor the Mac's work of 2026-11-24 ("The start-up,
+looked at again" below: the journal's size, the cloud client, the second
+SSH listener, the resolutions, Thunder's listening address, the HLS
+stream). None of those changes names a CPU, so they are expected to hold
+for it; that is not tried, and the four checks of 2026-11-24 were run on
+the Mac only. In turn, the Linux work of that day (Westeros' renderer
+copies video planes where the renderer is virgl) is not built on the Mac:
+the ARM64 image of 2026-11-24 was built before it came in.
+
 ## Building the minimal image
 
     rdke/build.sh            # 64-bit programs, for a host-native VM
@@ -539,9 +552,10 @@ this layer had neither. `tvemu-middleware-image.bb` now has both, with the
 Pi's directory (`/opt/dropbear`). Run after it on 2026-11-23, in the browser
 image: the key is made at the first start, `dropbear.service` is active and
 listens on the VM's port 22, and no unit has failed. No log-in was tried.
-The server takes root without a password, as RDK's development builds do;
-the launcher forwards no port to the VM, so it is reached from inside the VM
-only.
+The server takes root without a password, as RDK's development builds do.
+The launcher forwards a port of this host's loopback address to it when a run
+asks for that (`--option forward=2222:22`, see "Starting an image") and not
+otherwise; a log-in from the host was made that way on 2026-11-24.
 
 **The Bluetooth manager is not started.** `btmgr.service` ended with "Could
 not initialize BTRCore/HAL module" and was started again for as long as the
@@ -556,11 +570,98 @@ its library. Run after it on 2026-11-23: the unit is disabled and inactive,
 no unit fails or is started again in a loop, and the plug-in
 `org.rdk.Bluetooth` is still activated; no call to it was tried.
 
-**Still seen at start-up, not looked into** (2026-11-23): the process of the
-XCast plug-in (a `WPEProcess`) ends once with a segmentation fault a few
-seconds after Thunder starts; `dropbear.service` fails its first start in
-some boots and starts at the retry five seconds later; the plug-ins
-`org.rdk.AVOutput` and `org.rdk.UserPreferences` are deactivated.
+**The XCast plug-in's process ended with a segmentation fault; repaired.**
+A few seconds after Thunder started, the `WPEProcess` of XCast ended in
+`fprintf()`, called from the DIAL server's library (xdialserver,
+`gdialService::getInstance` to `gdial_plat_util_log`; from a core dump).
+`server/plat/gdial-plat-util.c` calls `basename()` with no declaration in
+sight, so the C compiler takes its result to be an int: the whole pointer on
+32-bit ARM, its lower half where a pointer has 64 bits. The first message
+the library logs is the end of the process. A patch declares it
+(`recipes-middleware/xdial`), and the recipe now makes a call of an
+undeclared function an error in this library's build. Run after it on
+2026-11-23: no process ends with a signal at start, the plug-in is
+activated, the library logs, and the DIAL server listens on the VM's ports
+56889 and 56890 and on UDP 1900. No DIAL request was made to it.
+
+**The start-up, looked at again on 2026-11-24** (macOS, ARM64,
+host-native), with a log-in over the forwarded SSH port:
+
+- *The image kept too little of its journal to say.* RDK-E keeps 3 MB of
+  it in memory, in two files, which the middleware fills in under a minute:
+  30 seconds after a start the first lines were gone, and "no unit was
+  started again" (above, 2026-11-23) was said of what was left. The image
+  now keeps 64 MB (`tvemu-middleware-image.bb`), which holds a whole start
+  with room to spare (16 MB after 40 seconds).
+- *The client of the operator's cloud (parodus, for WebPA) ended at every
+  start and was started again every 40 seconds; it is no longer started.*
+  Seen as soon as the journal held a start: "Bad webpa url", then an abort
+  (signal 6). Its server's address comes from a device's configuration, and
+  the virtual device has none. The image does not enable its four units.
+- *The SSH server failed its first start in at least four boots of eight,
+  with "Failed listening on '22': Address already in use", and started at
+  the retry five seconds later; repaired.* The image had both of dropbear's
+  units enabled: RDK's `dropbear.service`, which listens all the time, and
+  openembedded-core's `dropbear.socket`, with which systemd itself listens
+  on port 22. Starting the service closes the socket (they are declared to
+  conflict), and by hand that went well 20 times of 20, also with the host
+  key still to be made and with RDK's restart of the service on a change of
+  address at the same moment; at start-up it did not. Why not was not
+  found. The image no longer enables the socket unit, and in eight boots of
+  eight after that the server started at once and no unit failed.
+- *Two plug-ins are deactivated, and both by design.* `org.rdk.AVOutput`
+  refuses to start on anything but a television ("Invalid profile type for
+  TV", "Not supported"): the picture settings it has are a TV's.
+  `org.rdk.UserPreferences` is started by nothing in the image (the
+  middleware's services each have a unit that starts them, and this one has
+  none); it starts when asked (`Controller.1.activate`). Neither is changed.
+- *The current resolution was given as 720p, and no resolution as
+  supported; repaired.* Three causes, one behind the other:
+  - The hardware layer asks Westeros' backend for the mode through its
+    display server (the socket `display` in `XDG_RUNTIME_DIR`, the one
+    `westeros-gl-console` talks to), and the backend starts that server in
+    the code that looks for planes, which this image turns off
+    (`WESTEROS_GL_NO_PLANES`). With no answer, RDK's service gave the
+    resolution it has in store, 720p. A patch starts the server in either
+    case (`recipes-graphics/westeros-soc`, the fourth); it is not specific
+    to the VM.
+  - The television's supported resolutions are read from the display's
+    description (EDID), and the launcher starts this image without QEMU's
+    (`edid=off`, for a mode of 60 pictures a second). The virtual device now
+    has a description of its own, `/etc/tvemu/edid`: a television named
+    "tv-emu TV" with 1920x1080 at 60 as its own mode, 720p, 1080p at 50,
+    576p and 480p, and two channels of PCM sound. `tvemu-device` makes it
+    with a script (`make-edid.py`), and the hardware layer reads it where
+    the connector gives none (`recipes-vendor/halif`, the second patch).
+    The kernel does not get it: the display's modes are as before.
+  - The list of the device's own supported resolutions stayed empty: the
+    Pi's hardware layer names its table of resolutions with a count of 0
+    ("info available at runtime"), and RDK's device settings plug-in takes
+    the list from that table alone. The count is now the table's (the third
+    patch). A Pi with the same two releases would have the same empty list;
+    that was not tried.
+  Seen after it: `getCurrentResolution` gives 1080p60 at 1920x1080,
+  `getSupportedResolutions` the table's 18 (480p to 2160p, which is the
+  Pi's table; nothing but 1080p was set), `getSupportedTvResolutions` the
+  description's, and `readEDID` the 256 bytes.
+- *Thunder listens on every address of the target*, not on its loopback
+  address alone, as RDK-E's own `middleware-test-image` has it for
+  development images: with that, a forwarded port reaches its JSON-RPC
+  interface. The VM's network is QEMU's user-mode one, so nothing outside
+  this host reaches the target, and nothing on this host does unless a run
+  forwards a port.
+- *The volume after a start is the hardware layer's choice, not a fault of
+  the VM.* The Pi's code sets the soft volume control to 75 % when it
+  unmutes with no volume in store (`dsAudio.c`), and RDK's display settings
+  service reports 75 as well (it was noted as 100 on 2026-11-21, which was
+  after the check had set it). Left as it is.
+- *Thunder no longer ended when one display was taken away and another
+  made at once* (below, "Video and sound": about three starts of ten on
+  2026-11-21). In twelve such changes of twelve, in one boot of the image
+  of 2026-11-23, Thunder kept running. The fault had the mark of the one
+  the second `westeros-gl` patch repaired the day before (signal 11 in the
+  refresh thread, a window marked for drawing with no buffer); that it was
+  the same one was not shown.
 
 **What RDK-E's code assumes of 32-bit ARM.** Found by building and running
 it as 64-bit programs; each is handled in this layer, with a comment at the
@@ -595,11 +696,11 @@ vendor layer.
 
 **Not done, of "as much as feasible":** a simulated HDMI link for CEC (the
 kernel has a virtual CEC driver); a sound device, without which the audio
-settings and system audio have nothing to act on; the list of supported
-resolutions, which comes back empty, and the current resolution, which the
-middleware gives as 720p while the display is at 1080p; power states and
-the display's resolution tied to the launcher; and no check covers any of
-this.
+settings and system audio have nothing to act on (the image has had one
+since 2026-11-21, see "Video and sound"); power states and the display's
+resolution tied to the launcher. The resolutions are reported rightly since
+2026-11-24 (above), and `rdke-device` checks the display, the identity, the
+power state and the front panel as RDK's services give them.
 
 ## The browser, and RDK's user interface
 
@@ -1032,9 +1133,11 @@ process):
   browser included. The checks of the browser pass with it. Whether the
   two-plane image also fails with the host's GPU (virgl) was not tried.
 - *The device starts at three quarters of its volume.* The sound card's soft
-  volume control is at 75 % after boot (about 13 dB down), while RDK's
-  display settings service reports 100. Setting the volume through that
-  service puts the control where the service says.
+  volume control is at 75 % after boot (about 13 dB down). Setting the
+  volume through RDK's display settings service puts the control where the
+  service says. Looked into on 2026-11-24: it is the Pi's hardware layer
+  that chooses 75 %, and the service reports the same (see "The start-up,
+  looked at again").
 - *Thunder ends with a segmentation fault when one display is taken away
   and another made at once.* The check first stopped the user interface
   (`systemctl stop tvemu-refui`) and started the page with
@@ -1042,13 +1145,28 @@ process):
   then ended on signal 11 in Westeros' refresh thread (`wstVRefresh`), and
   systemd does not start it again. It was not seen when an application is
   started over the running user interface, which is what the check does
-  now. The cause was not looked for.
+  now. The cause was not looked for. Not seen again on 2026-11-24, in
+  twelve tries (see "The start-up, looked at again").
 - *Looping video*, as above: a page that sets `loop` on a video sees it stop.
   Later WebKit and GStreamer versions were not looked at for a repair.
 - *A host output device that takes no sound.* The host-side sound process
   now keeps at most a second of sound waiting for the host's player and
   drops what is older, so that the target is not stopped by it; before, the
   VM stood still with the device.
+- *AAMP has a stream in the image and a check, since 2026-11-24.* The
+  reference stream is in the image as an HLS stream too (`hls.m3u8`, the
+  stream of `avc.mp4` in five segments of a second, which `rdke/build.sh`
+  makes without encoding it again), with a page that plays it with AAMP's
+  object (`aamp.html`). The browser gives a page that object only when its
+  address has a host (`CanInjectJSBindings` in the plug-in's extension), so
+  a page from a file has none; the image's web server, which serves the
+  user interface, serves the directory as well
+  (`http://127.0.0.1:50050/tvemu-media/aamp.html`). `./emu verify
+  rdke-aamp` plays it: the picture in the launcher's window and the tone at
+  the host. AAMP was seen to stay at the end of this stream without
+  reporting that it had completed, and to report a time that runs ahead of
+  the picture; the page starts the stream again when the time stands
+  still.
 - *Not tried:* DASH, and adaptive streams and Media Source Extensions in the
   browser's own player (HLS was played with AAMP only), the other codecs,
   Dolby sound, protected content, subtitles, seeking and trick play in AAMP,
@@ -1083,6 +1201,24 @@ What is typed or piped into the launcher goes to the target's console, so
 the shell can be used from a script as well:
 
     (sleep 10; echo 'uname -a'; sleep 2) | ./emu run --mode vm --rootfs rdke --timeout 20
+
+A run reaches ports of the target from this host where it asks for them:
+
+    ./emu run --mode vm --rootfs rdke --window --option forward=2222:22,9998:9998,10000:10000
+
+    ssh -p 2222 root@127.0.0.1
+    curl -d '{"jsonrpc":"2.0","id":1,"method":"Controller.1.status"}' http://127.0.0.1:9998/jsonrpc
+
+`--option forward=HOST:TARGET[,HOST:TARGET...]` has QEMU listen on the HOST
+ports of this host's loopback address, and on no other address, and pass
+each connection on to the target's port: here the SSH server (root, no
+password), Thunder's JSON-RPC interface, and the web inspector of the user
+interface's browser (10000; `HtmlApp` has 10001). Nothing is forwarded
+unless a run asks: the SSH server lets in whoever reaches it. A port of
+this host that is in use is named before the VM is started. The option is
+the launcher's and holds for the Debian root file system too. Tried on
+2026-11-24 (macOS): the log-in, Thunder's answers, and the inspector's
+page (its address answered; it was not used).
 
 `./emu verify rootfs-option` checks this path with a stand-in, the Debian
 VM image of the host's CPU architecture started the same way, and with the
@@ -1124,6 +1260,38 @@ reference stream, the launcher's window shows its picture, and its tone
 reaches the host-side sound process and the host's output device (see
 "Video and sound" for what was seen).
 
+    ./emu verify rdke-health rdke-device rdke-aamp rdke-rate
+
+Four more, since 2026-11-24, for what had only been looked at by hand. They
+need an image built from the layer of that day or later, and end as
+unavailable with an older one where they can tell.
+
+- `rdke-health`: the image starts to its user interface with the system's
+  state "running"; no unit failed, failed a start or was started again; no
+  process ended on a signal; every plug-in that Thunder starts by itself is
+  started (those that are not started by the image's configuration are
+  listed in the result); and Thunder and the SSH server answer this host
+  through forwarded ports. It reads the journal, and says so when that
+  does not go back to the start.
+- `rdke-device`: what RDK's services say of the virtual device, asked
+  through Thunder from this host: the connected display, the current
+  resolution against the display's mode, the supported resolutions, the
+  display's description, the serial number, maker and model, the power
+  state and the front panel's light. It reads; it sets nothing.
+- `rdke-aamp`: RDK's player plays the reference stream as an HLS stream
+  from the image itself, with the picture in the launcher's window and the
+  tone at the host, as `rdke-video` has them for the browser's own player.
+- `rdke-rate`: how many pictures a second reach the launcher's window, at
+  the home screen and while the browser plays the reference stream,
+  counted over 10 s each. A host-native guest has to give 50; for a guest
+  on a simulated CPU the check gives the numbers and ends as unavailable.
+
+Every RDK-E check now starts the image with Thunder's and the SSH server's
+ports forwarded to free ports of this host. Not covered by a check:
+Westeros alone, a video from the user interface's own cards (which are
+streams from the internet), setting a resolution or a power state, and a
+container.
+
 ## What is open
 
 1. **The vendor layer, in part.** Its components are there and the
@@ -1151,10 +1319,39 @@ reaches the host-side sound process and the host's output device (see
    image is the last line of releases that starts applications with
    RDKShell (5.0.24), on a stand-in for it; the releases from 6.0 on use
    the application managers.
+   Looked into on 2026-11-23, nothing changed: the application managers
+   are all in this image and activated (`org.rdk.AppManager`,
+   `LifecycleManager`, `RuntimeManager`, `AppPackageManager`,
+   `AppStorageManager`, `DownloadManager`, `PreinstallManager`,
+   `RDKWindowManager`, `OCIContainer`), with no application installed. So
+   is RDK-E's start of the user interface: `sceneset.service` copies the
+   "factory apps" from `/etc/rdk/factoryapps` to the preinstall directory,
+   has them installed and starts `com.rdkcentral.refui` with the
+   application manager. Here it finds no packages ("Failed to open factory
+   apps location", "StartPreinstall failed"). What is missing is the
+   packages and what the runtime manager needs to start one:
+   - three packages ("bolt", RDK's format of an OCI layout with an EROFS
+     layer under dm-verity, signed): a base layer (`com.rdkcentral.base`),
+     the browser as a runtime (`com.rdkcentral.wpe`) and the user interface
+     (`com.rdkcentral.refui`, releases 6.0 on), built with
+     `meta-bolt-distro`, `meta-bolt-wpe` and `bolt-tools`. RDK publishes a
+     set for the Raspberry Pi 4 (base 0.2.0, wpe 0.3.1, refui 6.0.9); none
+     was downloaded, and no 64-bit set was found. The build names a
+     manifest of them in `FACTORY_APPS_JSON_FILE`, which is not set here;
+   - the certificate the packages are signed with, in `/etc/rdk/certs`;
+   - a "GPU layer" of the platform (`/usr/share/gpu-layer`), which the
+     Pi's vendor layer has as a recipe (`gpu-layer.bb`) and this layer has
+     not;
+   - the kernel's overlay file system, which is off in this kernel
+     (`CONFIG_OVERLAY_FS`); EROFS and dm-verity are on, loop devices are a
+     module.
+   Not tried: installing or starting any package.
 5. **The launcher's side, in part.** `./emu run --mode vm --rootfs rdke`
    boots an image from `build/rdke/arm64`, and the remote control's keys
    reach it (`rdke-browser` checks that), and the target's sound is played
-   through the host (`rdke-video`). Captures (`--screenshot`) are refused.
+   through the host (`rdke-video`). Ports of the target are forwarded where
+   a run asks (`--option forward`). Captures (`--screenshot`), recording and
+   RedRat input are refused, and the launcher does not build the image.
 6. **RDK's own virtual device.** RDK's build scripts mention a "vdevice"
    product layer (build-scripts, pull request 30, June 2026). No public
    repository of it was found on 2026-11-20. If one is published, it may be

@@ -432,6 +432,15 @@ terminal:
 
     ./emu run --mode vm --rootfs rdke --window
 
+`--option forward=HOST:TARGET[,HOST:TARGET...]` makes ports of a VM target
+reachable from this host, with either root file system: QEMU listens on the
+HOST ports of this host's loopback address (and on no other address) and
+passes each connection on to the target's port. For an RDK-E target,
+`--option forward=2222:22,9998:9998,10000:10000` gives its SSH server
+(`ssh -p 2222 root@127.0.0.1`; the image takes root without a password),
+Thunder's JSON-RPC interface and the web inspector of its user interface's
+browser. Nothing is forwarded unless a run asks for it.
+
 It is VM mode only, with an ARM64 guest: `--arch native` on an ARM64 host,
 `--arch arm64` (a simulated CPU) elsewhere. Workloads, driver features,
 captures, RedRat input, `--record` and `--repeat` belong to the Debian root
