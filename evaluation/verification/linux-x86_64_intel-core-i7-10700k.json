@@ -1069,9 +1069,9 @@
         "the launcher's own parser reads those arguments as what was set, and the command line the window shows is the one of those arguments; with nothing set it shows \"emu run\"",
         "unchanged, Start gives \"emu run\"; a timeout of \"soon\" is refused with the launcher's reason (Argument --timeout: invalid float value: 'soon'); closing the window starts nothing"
       ],
-      "checked_at": "2026-11-23T21:11:12Z",
-      "seconds": 2.8,
-      "revision": "97b4069fc65ecbc06a5c7142d900fe367c4d201c-dirty",
+      "checked_at": "2026-11-24T16:33:42Z",
+      "seconds": 2.9,
+      "revision": "f1ea977f254678261d21e71be3cbab72a91465ce-dirty",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     },
     "settings-launch": {
@@ -1083,9 +1083,9 @@
         "its results are those of the same arguments on the command line: [('hwrng', 'mocked', 'mock:fixed-pattern', '4d4f434b45442d4857524e472d56312e', True)]",
         "with arguments (\"emu workloads\") the launcher did as they say, without the window"
       ],
-      "checked_at": "2026-11-23T21:11:14Z",
-      "seconds": 2.2,
-      "revision": "97b4069fc65ecbc06a5c7142d900fe367c4d201c-dirty",
+      "checked_at": "2026-11-24T16:33:44Z",
+      "seconds": 2.3,
+      "revision": "f1ea977f254678261d21e71be3cbab72a91465ce-dirty",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     },
     "web-launch-container": {
@@ -2159,12 +2159,12 @@
       "details": [
         "--rootfs offers debian and rdke, and debian without it",
         "--rootfs rdke is refused with container mode, a workload, a driver feature, an ARM32 guest, a directory without an image; without an image the launcher names the directory",
-        "a stand-in (the x86-64 Debian VM image, started with --rootfs rdke as an RDK-E image would be) booted its kernel and its own init in 1s, in a host-native guest",
+        "a stand-in (the x86-64 Debian VM image, started with --rootfs rdke as an RDK-E image would be) booted its kernel and its own init in 2s, in a host-native guest",
         "the image built for the machine tvemu-x86-64-rdke (bzImage and rootfs.ext4 in build/rdke/x86_64) booted its kernel and its own init in 2s, in a host-native guest"
       ],
-      "checked_at": "2026-11-23T21:11:21Z",
-      "seconds": 3.4,
-      "revision": "97b4069fc65ecbc06a5c7142d900fe367c4d201c-dirty",
+      "checked_at": "2026-11-23T21:35:09Z",
+      "seconds": 3.5,
+      "revision": "f1ea977f254678261d21e71be3cbab72a91465ce",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     },
     "rdke-browser": {
@@ -2173,12 +2173,12 @@
       "description": "RDK's browser shows a page in an RDK-E image and gets the remote control's keys",
       "details": [
         "the RDK-E image (bzImage and rootfs.ext4 in build/rdke/x86_64) started in a host-native guest, and RDK's browser plug-in HtmlApp (WPE WebKit) showed the image's page on a display of RDK's window manager: tvemu-app-start: HtmlApp shows file:///usr/share/tvemu/page/index.html on wst-htmlapp (1920x1080)",
-        "the launcher's window got the page's picture at 1920x1080: its red corner blocks and its background are where the page draws them; the plug-in reports 35 frames a second",
+        "the launcher's window got the page's picture at 1920x1080: its red corner blocks and its background are where the page draws them; the plug-in reports 31 frames a second",
         "13 remote control keys sent from the window arrived in the page, each with a web page's name and code for it: ok as Enter, up as ArrowUp, down as ArrowDown, left as ArrowLeft, right as ArrowRight, back as Backspace, 1 as 1, play as MediaPlay, red as ColorF0Red, green as ColorF1Green, yellow as ColorF2Yellow, blue as ColorF3Blue, exit as Escape"
       ],
-      "checked_at": "2026-11-23T21:11:49Z",
-      "seconds": 27.5,
-      "revision": "97b4069fc65ecbc06a5c7142d900fe367c4d201c-dirty",
+      "checked_at": "2026-11-23T21:35:37Z",
+      "seconds": 28.0,
+      "revision": "f1ea977f254678261d21e71be3cbab72a91465ce",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     },
     "rdke-launcher": {
@@ -2190,9 +2190,9 @@
         "the image's stand-in answered the call (RDK-E's middleware has org.rdk.RDKWindowManager in its place) and names the application as resumed; the OK key arrived in the application",
         "the EXIT key went to the user interface, which ended the application: it is no longer in org.rdk.RDKShell's getState, its page is off the display, and the user interface has its display"
       ],
-      "checked_at": "2026-11-23T21:12:15Z",
-      "seconds": 26.7,
-      "revision": "97b4069fc65ecbc06a5c7142d900fe367c4d201c-dirty",
+      "checked_at": "2026-11-23T21:36:05Z",
+      "seconds": 27.5,
+      "revision": "f1ea977f254678261d21e71be3cbab72a91465ce",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     },
     "rdke-video": {
@@ -2202,12 +2202,12 @@
       "details": [
         "the RDK-E image (bzImage and rootfs.ext4 in build/rdke/x86_64) started in a host-native guest, and RDK's browser plug-in HtmlApp (WPE WebKit) played the image's H.264 and AAC reference stream from a page: its player reports it playing at 1280x720, with its time moving",
         "the launcher's window got the stream's picture, full screen at 1920x1080: its four corner blocks and its marker block have the stream's colours; decoding and drawing are done on the target's CPU, with the browser's processes at 440% of one CPU",
-        "the stream's 880 Hz tone reached the host-side process in 119 tenths of a second; path: target sound card (0 [SoundCard      ]: virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe",
+        "the stream's 880 Hz tone reached the host-side process in 121 tenths of a second; path: target sound card (0 [SoundCard      ]: virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe",
         "the tone was recorded at the host's sound server"
       ],
-      "checked_at": "2026-11-23T21:12:45Z",
-      "seconds": 29.7,
-      "revision": "97b4069fc65ecbc06a5c7142d900fe367c4d201c-dirty",
+      "checked_at": "2026-11-23T21:36:35Z",
+      "seconds": 30.5,
+      "revision": "f1ea977f254678261d21e71be3cbab72a91465ce",
       "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
     }
   }

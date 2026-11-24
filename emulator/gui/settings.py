@@ -29,10 +29,10 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QFil
                                QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
                                QVBoxLayout, QWidget)
 
-from .. import catalog, drivers, redrat
+from .. import catalog, drivers, host, redrat, rootfs
 from ..cli import run_parser
 from ..errors import EmuError
-from ..run import KNOWN_OPTIONS
+from ..run import KNOWN_OPTIONS, default_cpus
 from ..window import create_redrat_profile
 from .redrat import Discovery
 
@@ -191,11 +191,24 @@ class NumberField(Field):
         self.widget = QSpinBox()
         self.widget.setRange(low, high)
         self.widget.setSingleStep(step)
+        self.default = action.default
         self.widget.setValue(action.default if action.default is not None else low)
 
     def arguments(self):
         value = self.widget.value()
-        return [] if value == self.action.default else [self.action.option_strings[0], str(value)]
+        return [] if value == self.default else [self.action.option_strings[0], str(value)]
+
+    def set_default(self, default):
+        """The launcher's default has become another one, as it depends on
+        the other settings: a field that showed the default shows the new one."""
+        if default == self.default:
+            return
+        follows = self.widget.value() == self.default
+        self.default = default
+        if follows:
+            self.widget.blockSignals(True)
+            self.widget.setValue(default)
+            self.widget.blockSignals(False)
 
     def set(self, value):
         self.widget.setValue(int(value))
@@ -419,6 +432,10 @@ class SettingsWindow(QDialog):
 
     def changed(self, *ignored):
         self.fields["arch"].widget.setEnabled(self.fields["mode"].value() == "vm")
+        # The launcher's default number of CPUs depends on the target.
+        self.fields["cpus"].set_default(default_cpus(
+            self.fields["mode"].value() == "vm" and self.fields["rootfs"].value() == rootfs.RDKE,
+            self.fields["arch"].value() in ("native", host.host_arch())))
         profile = self.fields["redrat_profile"].value()
         self.fields["redrat_profile"].widget.setEnabled(bool(self.redrat_devices))
         self.fields["redrat_profile"].create_button.setEnabled(bool(self.redrat_devices))

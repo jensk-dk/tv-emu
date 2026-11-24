@@ -151,8 +151,9 @@ everything here was found by building and running it, on the Linux host
 - *The image keeps 3 MB of journal*, which its services fill in a minute or
   two. The stand-in for org.rdk.RDKShell therefore keeps its lines in
   `/run/tvemu/rdkshell.log` as well, and the checks read both.
-- *Left as found:* Dobby ends with a segmentation fault at start, as on
-  ARM64; the Xcast plug-in's process leaves a crash dump at each boot;
+- *Left as found:* the Xcast plug-in's process leaves a crash dump at each
+  boot (Dobby, the SSH server and the Bluetooth manager, repaired on macOS
+  on 2026-11-23, start as meant here too: no failed unit after boot);
   `CONFIG_VIRTIO_INPUT` comes out as a module (the keys arrive through the
   virtio serial port and do not need it); why the backend has no atomic
   mode setting here was not looked for.
