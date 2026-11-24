@@ -606,9 +606,12 @@ the emulator.
   Ctrl+Alt+M mutes, Ctrl+Alt+1 is 1:1, Ctrl+Alt+R shows or hides the remote.
   On a Mac use Control or Command with Option. The on-screen remote starts
   hidden; the toolbar button or Ctrl+Alt+R toggles it.
-- **How the display gets there.** In VM mode QEMU serves it. On Linux and
-  Windows that is its VNC server, on a socket of the run or, on Windows, on a
-  loopback port. On macOS, for a display that the target's CPU renders, it is
+- **How the display gets there.** In VM mode QEMU serves it
+  ([docs/frame-transfer.md](docs/frame-transfer.md) has what each way costs
+  and what would be the best one on each host). On Windows, and on Linux for
+  a display that the host's GPU renders, that is its VNC server, on a socket
+  of the run or, on Windows, on a loopback port. On macOS and Linux, for a
+  display that the target's CPU renders, it is
   QEMU's D-Bus display over a private socket pair
   ([emulator/dbusdisplay.py](emulator/dbusdisplay.py)): QEMU's VNC server
   passed on 15 to 20 pictures a second of a display that changed 35 times a
