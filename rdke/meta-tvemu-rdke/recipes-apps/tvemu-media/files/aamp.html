@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>tv-emu video with AAMP</title>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+</style>
+</head>
+<body>
+<!-- The reference stream of the emulator's media checks as an HLS stream (hls.m3u8, with the stream
+     of avc.mp4 in five segments of a second), played by RDK's player, AAMP, as the image's user
+     interface plays its video cards: with AAMP's object in the browser (AAMPMediaPlayer), whose
+     pictures go to Westeros' video sink and not into the page. The page is transparent, so that
+     they are seen.
+
+     What the player says is put in the page's address, as video.html does it:
+     #STATE-WIDTHxHEIGHT-TENTHS-ERROR, as in #playing-1280x720-23-0. The size is the one AAMP names
+     for the stream it chose ("0x0" until it has). The stream is started again when it has ended.
+     "?url=..." plays another stream. -->
+<script>
+(function () {
+    var state = "loading", width = 0, height = 0, tenths = 0, error = 0, player = null;
+    var asked = /[?&]url=([^&]*)/.exec(window.location.search);
+    var url = asked ? decodeURIComponent(asked[1]) :
+        window.location.href.replace(/[?#].*$/, "").replace(/[^\/]*$/, "") + "hls.m3u8";
+    function say() {
+        window.location.hash = state + "-" + width + "x" + height + "-" + tenths + "-" + error;
+    }
+    var waited = 0;
+    function start() {
+        // The browser gives a page AAMP's object when its document has been loaded, which is after
+        // this script has first run.
+        if (typeof AAMPMediaPlayer === "undefined") {
+            waited += 1;
+            state = waited > 60 ? "noaamp" : "loading";
+            window.setTimeout(start, 250);
+            return say();
+        }
+        if (player) {
+            player.stop();
+        } else {
+            player = new AAMPMediaPlayer();
+            player.addEventListener("playbackStarted", function () { state = "playing"; say(); });
+            player.addEventListener("playbackProgressUpdate", function (event) {
+                tenths = Math.round((event.positionMiliseconds || 0) / 100);
+            });
+            player.addEventListener("bitrateChanged", function (event) {
+                width = event.width || width;
+                height = event.height || height;
+            });
+            player.addEventListener("playbackFailed", function (event) {
+                state = "error";
+                error = event.code || 1;
+                say();
+            });
+            player.addEventListener("playbackCompleted", function () {
+                state = "ended";
+                say();
+                window.setTimeout(start, 200);
+            });
+        }
+        player.initConfig({ initialBitrate: 2800000, progressReportingInterval: 0.5 });
+        player.load(url);
+    }
+    // AAMP was seen to stay at the stream's end without saying that it had completed: when its time
+    // has stood still for two seconds, the stream is started again as well.
+    var last = -1, still = 0;
+    window.setInterval(function () {
+        still = (state === "playing" && tenths === last) ? still + 1 : 0;
+        last = tenths;
+        if (still >= 4) {
+            still = 0;
+            state = "ended";
+            start();
+        }
+        say();
+    }, 500);
+    say();
+    start();
+})();
+</script>
+</body>
+</html>

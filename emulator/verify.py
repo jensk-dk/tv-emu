@@ -5,6 +5,7 @@ target OS reported. Outcomes are merged into
 evaluation/verification/HOST.json, which records what has been verified on
 which host.
 """
+import base64
 import contextlib
 import datetime
 import http.client
@@ -2792,6 +2793,85 @@ def _rdke_page_drawn(viewer, seen, seconds):
         return bool(_wait(picture, seconds, 1))
 
 
+# The ports of Thunder's JSON-RPC interface and of the SSH server in the RDK-E image.
+RDKE_THUNDER_PORT = 9998
+RDKE_SSH_PORT = 22
+
+
+def _rdke_thunder(seen, method, params=None, seconds=20):
+    """What Thunder in the image answers to a JSON-RPC call made from this
+    host, through the port the launcher forwards: the call's result. Raises
+    OSError when Thunder is not reached and ValueError when it refuses."""
+    import urllib.request
+    call = {"jsonrpc": "2.0", "id": 1, "method": method}
+    if params is not None:
+        call["params"] = params
+    request = urllib.request.Request("http://127.0.0.1:%d/jsonrpc" % seen["ports"]["thunder"],
+                                     data=json.dumps(call).encode(), headers={"Content-Type": "application/json"})
+    # No proxy: the address is this host's own.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(request, timeout=seconds) as reply:
+        said = json.loads(reply.read().decode("utf-8", "replace") or "{}")
+    if "error" in said:
+        raise ValueError("%s: %s" % (method, said["error"]))
+    return said.get("result")
+
+
+def _rdke_asker(typed, answer, console, lock):
+    """`asked(name, command, pattern, seconds)`: what `command` prints on the
+    image's console (one line that is `pattern`), or "" when nothing came."""
+    def asked(name, command, pattern=r"\d+", seconds=30):
+        marker = "tvemu-%s=" % name
+        with lock:
+            del console[:]
+        typed("echo %s$(%s)" % (marker, command))
+        return (answer(re.escape(marker) + pattern, seconds) or "=").split("=", 1)[1]
+    return asked
+
+
+# What says that the image's user interface has started and asked for its keys (the stand-in for
+# org.rdk.RDKShell writes the line to the journal and, since the image keeps little of that, to a file).
+_RDKE_UI_KEYS = ("{ cat /run/tvemu/rdkshell.log 2> /dev/null; journalctl -b --no-pager; } | grep -c 'TvemuRDKShell: "
+                 "key intercepts for residentapp: done' | grep -c '^[1-9]'")
+
+
+def _rdke_ui_ready(asked, seen, slow):
+    """Waits for the image's user interface to have the display and its
+    keys; says in `seen` when it does not."""
+    ready = _wait(lambda: asked("ui", "systemctl is-active tvemu-refui | grep -c '^active'") == "1" and
+                  asked("keys", _RDKE_UI_KEYS) == "1", 300 * slow, 2)
+    if not ready:
+        seen["error"] = "the user interface did not start and ask for its keys in %d s" % (300 * slow)
+    return bool(ready)
+
+
+def _rdke_thunder_reached(asked, seen, slow):
+    """Waits for Thunder to answer this host through the forwarded port;
+    says in `seen` why when it does not."""
+    def reached():
+        try:
+            return _rdke_thunder(seen, "Controller.1.subsystems") is not None
+        except (OSError, ValueError) as error:
+            seen["thunder-error"] = "%s: %s" % (type(error).__name__, error)
+            return False
+    if _wait(reached, 120 * slow, 2):
+        return True
+    inside = asked("inside", "curl -s -m 10 -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":"
+                             "\"Controller.1.subsystems\"}' http://127.0.0.1:%d/jsonrpc | grep -c result"
+                   % RDKE_THUNDER_PORT)
+    binding = asked("binding", "grep -c '\"binding\":\"127.0.0.1\"' /etc/WPEFramework/config.json")
+    if inside == "1" and binding == "1":
+        seen["unavailable"] = ("Thunder in the RDK-E image on this host listens on the target's loopback address "
+                               "only, so it is not reached through a forwarded port: the image was built before "
+                               "the layer gave it every address (tvemu-middleware-image.bb, 2026-11-24)")
+    else:
+        seen["error"] = ("Thunder did not answer this host at 127.0.0.1:%d, which the launcher forwards to the "
+                         "target's port %d (%s); inside the target it %s"
+                         % (seen["ports"]["thunder"], RDKE_THUNDER_PORT, seen.get("thunder-error"),
+                            "answers" if inside == "1" else "does not answer either"))
+    return False
+
+
 def _rdke_session(body, options=None, on_audio=None):
     """Starts the RDK-E image of this host with the launcher's window, waits
     for its shell, and has `body(viewer, typed, answer, seen, console, lock,
@@ -2817,7 +2897,9 @@ def _rdke_session(body, options=None, on_audio=None):
     slow = 1 if arch == "native" else 15
     reader, writer = os.pipe()
     console, lock = [], threading.Lock()
-    seen = {"keys": {}}
+    # Thunder's and the SSH server's ports of the target, at ports of this host's loopback address.
+    seen = {"keys": {}, "ports": {"thunder": window.free_port(), "ssh": window.free_port()}}
+    forward = "%d:%d,%d:%d" % (seen["ports"]["thunder"], RDKE_THUNDER_PORT, seen["ports"]["ssh"], RDKE_SSH_PORT)
 
     def on_line(line):
         with lock:
@@ -2871,7 +2953,8 @@ def _rdke_session(body, options=None, on_audio=None):
     with os.fdopen(reader, "rb", buffering=0) as source:
         outcome = launch(RunOptions(mode="vm", arch=arch, rootfs=rootfs.RDKE, window=True, echo=False,
                                     stdin_script=source, on_line=on_line, on_viewer=drive, on_audio=on_audio,
-                                    options=dict(options or {"audio-output": "none"}, **{"verbose-boot": "no"}),
+                                    options=dict(options or {"audio-output": "none"},
+                                                 **{"verbose-boot": "no", vm.FORWARD_OPTION: forward}),
                                     timeout=1200 * slow))
     seen["outcome"] = outcome
     if "unavailable" in seen:
@@ -3023,16 +3106,20 @@ RDKE_VIDEO_MARKER = (0, 200, 255)
 RDKE_VIDEO_TONE = 880
 
 
-def check_rdke_video():
-    """Video and sound in an RDK-E image, as a person at the launcher's window
-    has them: RDK's browser plays an H.264 stream with AAC sound, its picture
-    reaches the window and its sound reaches the host."""
+def _rdke_stream_check(page, there, missing, address, played, moves):
+    """A page of the RDK-E image that plays the reference stream, as a person
+    at the launcher's window has it: the picture reaches the window and the
+    sound reaches the host. `page` is the page's address and `there` its
+    file in the image (`missing` says what an image without it lacks);
+    `address` is the page's name in its address, which the player's report
+    follows; `played` says in the result who played what; `moves` is how
+    many different times the player has to report in eight seconds."""
     sink = _HostSink()
 
     def body(viewer, typed, answer, seen, console, lock, slow):
-        typed("test -e /usr/share/tvemu/media/video.html; echo tvemu-media-$?")
+        typed("test -e %s; echo tvemu-media-$?" % there)
         if answer(r"tvemu-media-\d+", 30) != "tvemu-media-0":
-            seen["unavailable"] = "the RDK-E image on this host has no reference stream (tvemu-media)"
+            seen["unavailable"] = missing
             return
         typed("S() { curl -s -m 60 -d \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":1,\\\"method\\\":"
               "\\\"$1\\\"${2:+,\\\"params\\\":$2}}\" http://127.0.0.1:9998/jsonrpc; }")
@@ -3062,7 +3149,7 @@ def check_rdke_video():
             "volume", "S org.rdk.DisplaySettings.1.setVolumeLevel '{\"audioPort\":\"HDMI0\",\"volumeLevel\":100}'"
             " | grep -c '\"success\":true'") == "1", 120 * slow, 2))
         started = asked("launch", "S org.rdk.RDKShell.1.launch '{\"callsign\":\"HtmlApp\",\"type\":\"HtmlApp\","
-                        "\"uri\":\"%s\"}' | grep -c '\"success\":true'" % RDKE_VIDEO_PAGE, seconds=180)
+                        "\"uri\":\"%s\"}' | grep -c '\"success\":true'" % page, seconds=180)
         if started != "1":
             # What became of Thunder: its process, and what the system's log says of its service and
             # of processes that ended on a signal.
@@ -3081,7 +3168,7 @@ def check_rdke_video():
 
         def said():
             """What the page's address says of the player: state, picture size, tenths of a second, error."""
-            found = asked("player", "S HtmlApp.1.url | sed -n 's/.*video.html#\\([^\"]*\\)\".*/\\1/p'",
+            found = asked("player", "S HtmlApp.1.url | sed -n 's/.*%s[^#\"]*#\\([^\"]*\\)\".*/\\1/p'" % address,
                           r"[\w:.-]*", 15)
             seen["player"] = found
             parts = found.split("-")
@@ -3132,15 +3219,14 @@ def check_rdke_video():
     _require(seen.get("picture") == [], "the display does not show the stream's picture: %s"
              % "; ".join(seen.get("picture") or []))
     moved = len(set(seen.get("times") or []))
-    _require(moved >= 4, "the player's time did not move: %r" % seen.get("times"))
+    _require(moved >= moves, "the player's time did not move: %r" % seen.get("times"))
     received = [(row["level"], row["hz"]) for row in _trace(outcome)]
     _require(_tone_windows(received, RDKE_VIDEO_TONE) >= 20, "the host-side process did not receive the stream's "
              "%d Hz tone from the target's sound card (%d of %d tenths of a second hold it; the card's output was "
              "%r)" % (RDKE_VIDEO_TONE, _tone_windows(received, RDKE_VIDEO_TONE), len(received), seen.get("pcm")))
     audio = outcome.environment["emulator"].get("audio") or {}
-    lines = ["the RDK-E image (%s) started in a %s guest, and RDK's browser plug-in HtmlApp (WPE WebKit) played "
-             "the image's H.264 and AAC reference stream from a page: its player reports it playing at %s, with "
-             "its time moving" % (said_image, kind, RDKE_VIDEO_SIZE),
+    lines = ["the RDK-E image (%s) started in a %s guest, and %s: its player reports it playing at %s, with "
+             "its time moving" % (said_image, kind, played, RDKE_VIDEO_SIZE),
              "the launcher's window got the stream's picture, full screen at %dx%d: its four corner blocks and its "
              "marker block have the stream's colours; decoding and drawing are done on the target's CPU, with the "
              "browser's processes at %s%% of one CPU" % (tuple(seen["size"]) + (seen.get("cpu") or "?",)),
@@ -3155,6 +3241,261 @@ def check_rdke_video():
     return lines + sink.evidence()
 
 
+def check_rdke_video():
+    """Video and sound in an RDK-E image, as a person at the launcher's window
+    has them: RDK's browser plays an H.264 stream with AAC sound, its picture
+    reaches the window and its sound reaches the host."""
+    return _rdke_stream_check(
+        RDKE_VIDEO_PAGE, "/usr/share/tvemu/media/video.html",
+        "the RDK-E image on this host has no reference stream (tvemu-media)", "video.html",
+        "RDK's browser plug-in HtmlApp (WPE WebKit) played the image's H.264 and AAC reference stream from a page",
+        4)
+
+
+# The same stream as an HLS stream, played by RDK's player (AAMP) in the browser. The browser gives
+# AAMP's object to pages with a host in their address, so the image's web server serves the page.
+RDKE_AAMP_PAGE = "http://127.0.0.1:50050/tvemu-media/aamp.html"
+
+
+def check_rdke_aamp():
+    """Video and sound through RDK's player in an RDK-E image: AAMP, which
+    the image's user interface plays its video with, plays an HLS stream
+    from the image itself; its picture goes through Westeros' video sink to
+    the window and its sound to the host."""
+    return _rdke_stream_check(
+        RDKE_AAMP_PAGE, "/opt/www/tvemu-media/aamp.html",
+        "the RDK-E image on this host has no HLS form of the reference stream and no page that plays it with AAMP: "
+        "it was built before the layer had them (tvemu-media, 2026-11-24)", "aamp.html",
+        "RDK's player AAMP, in the browser plug-in HtmlApp as the image's user interface uses it, played the "
+        "image's reference stream as an HLS stream (H.264 and AAC in MPEG-2 transport stream segments) from the "
+        "image's own web server", 3)
+
+
+def check_rdke_health():
+    """The start of an RDK-E image, looked at as a person would after a
+    change: the system's state, units that failed or are started again and
+    again, processes that ended on a signal, plug-ins that are not started;
+    and the two ports of the target that a developer asks for, reached from
+    this host."""
+    def body(viewer, typed, answer, seen, console, lock, slow):
+        asked = _rdke_asker(typed, answer, console, lock)
+        if not _rdke_ui_ready(asked, seen, slow):
+            return
+        # A unit that is started again and again shows within its hold-off time (5 s for RDK's units).
+        _wait(lambda: asked("state", "systemctl is-system-running", r"[\w-]+") == "running", 120 * slow, 3)
+        time.sleep(20 * slow)
+        seen["state"] = asked("state", "systemctl is-system-running", r"[\w-]+")
+        names = r"[\w@.,:\\-]*"
+        seen["failed"] = asked("failed", "systemctl --failed --no-legend | awk '{print $1}' | tr '\\n' ,", names)
+        # The journal has to go back to the start for what follows.
+        seen["whole"] = asked("whole", "journalctl -b --no-pager | head -n 20 | grep -E 'Linux version|Booting Linux' | head -n 1 "
+                                      "| grep -c .")
+        seen["kept"] = asked("kept", "journalctl --disk-usage | sed 's/.*take up \\([0-9.]*[A-Z]\\).*/\\1/'", r"[\w.]*")
+        seen["restarted"] = asked(
+            "restarted", "journalctl -b --no-pager | sed -n 's/.*systemd\\[1\\]: \\(.*\\): Service hold-off time "
+            "over, scheduling restart.*/\\1/p' | sort -u | tr '\\n' ,", names)
+        seen["start-failures"] = asked(
+            "startfailures", "journalctl -b --no-pager | sed -n 's/.*systemd\\[1\\]: Failed to start \\(.*\\)\\.$/\\1/p'"
+            " | sort -u | tr ' \\n' '_,'", r"[^=]*")
+        seen["signals"] = asked(
+            "signals", "journalctl -b --no-pager | grep -E 'dumped core|code=killed|code=dumped|segfault at' | "
+            "grep -v -c 'tvemu-signals'")
+        seen["signal-lines"] = []
+        if seen["signals"] not in ("0", ""):
+            with lock:
+                del console[:]
+            typed("journalctl -b --no-pager | grep -E 'dumped core|code=killed|code=dumped|segfault at' | "
+                  "grep -v 'tvemu-signals' | head -n 5 | cut -c1-200; echo tvemu-signals-end")
+            answer(r"tvemu-signals-end", 30)
+            with lock:
+                seen["signal-lines"] = [line.strip() for line in console
+                                        if ("dumped core" in line or "code=" in line or "segfault at" in line)
+                                        and "grep" not in line]
+        seen["dumps"] = asked("dumps", "ls /var/lib/systemd/coredump /opt/secure/minidumps /opt/minidumps 2> /dev/null"
+                                       " | grep -c -E 'core\\.|\\.dmp'")
+        if not _rdke_thunder_reached(asked, seen, slow):
+            return
+        plugins = _rdke_thunder(seen, "Controller.1.status") or []
+        seen["plugins"] = len(plugins)
+        # A plug-in that Thunder is to start by itself and that is not started. (The middleware's
+        # others are started by a unit each, which fails when its plug-in does not start.)
+        seen["not-started"] = sorted(item.get("callsign", "?") for item in plugins
+                                     if str(item.get("startmode", "")).lower() == "activated"
+                                     and str(item.get("state", "")).lower() not in ("activated", "resumed", "suspended"))
+        seen["deactivated"] = sorted(item.get("callsign", "?") for item in plugins
+                                     if str(item.get("state", "")).lower() not in ("activated", "resumed", "suspended"))
+        # The SSH server, through the other forwarded port: it names itself when it is reached.
+        try:
+            with socket.create_connection(("127.0.0.1", seen["ports"]["ssh"]), timeout=20 * slow) as link:
+                link.settimeout(20 * slow)
+                # Its first line; the list of what it offers follows, which is not text.
+                seen["ssh"] = link.recv(64).split(b"\n")[0].decode("ascii", "replace").strip()
+        except OSError as error:
+            seen["ssh"] = "no answer (%s)" % error
+
+    seen, kind, said = _rdke_session(body)
+    _require(seen.get("state") == "running", "the system's state is %r, not \"running\"; failed units: %s"
+             % (seen.get("state"), seen.get("failed") or "none"))
+    _require(not (seen.get("failed") or "").strip(","), "units failed: %s" % seen.get("failed"))
+    if seen.get("whole") != "1":
+        raise CheckUnavailable("the RDK-E image on this host (%s) keeps too little of its journal to say what "
+                               "happened at its start (%s, which no longer has the kernel's first lines): it was "
+                               "built before the layer gave it a journal of 64 MB (tvemu-middleware-image.bb, "
+                               "2026-11-24)" % (said, seen.get("kept") or "?"))
+    _require(not (seen.get("restarted") or "").strip(","), "units were started again after ending: %s"
+             % seen.get("restarted"))
+    _require(not (seen.get("start-failures") or "").strip(","), "units failed a start: %s"
+             % (seen.get("start-failures") or "").replace("_", " "))
+    _require(seen.get("signals") == "0" and seen.get("dumps") == "0", "processes ended on a signal (%s lines in the "
+             "journal, %s dumps): %s" % (seen.get("signals"), seen.get("dumps"),
+                                         " | ".join(seen.get("signal-lines") or [])))
+    _require(not seen.get("not-started"), "plug-ins that Thunder starts by itself are not started: %s"
+             % ", ".join(seen.get("not-started") or []))
+    _require(str(seen.get("ssh", "")).startswith("SSH-2.0"), "the SSH server did not answer at 127.0.0.1:%d, which "
+             "the launcher forwards to the target's port %d: %s" % (seen["ports"]["ssh"], RDKE_SSH_PORT, seen.get("ssh")))
+    return ["the RDK-E image (%s) started in a %s guest to its user interface with the system's state \"running\": "
+            "no unit failed, none failed a start or was started again, and no process ended on a signal (the "
+            "journal goes back to the kernel's first lines, %s kept)" % (said, kind, seen.get("kept") or "?"),
+            "Thunder has %d plug-ins, and every one it starts by itself is started; not started, by the image's "
+            "configuration: %s" % (seen["plugins"], ", ".join(seen.get("deactivated") or []) or "none"),
+            "Thunder's JSON-RPC interface and the SSH server (%s) answered this host at ports of its loopback "
+            "address that the launcher forwards to the target's ports %d and %d (--option %s)"
+            % (seen["ssh"], RDKE_THUNDER_PORT, RDKE_SSH_PORT, vm.FORWARD_OPTION)]
+
+
+# The virtual device as the image describes it (rdke/meta-tvemu-rdke, tvemu-device and tvemu-vendor.inc).
+RDKE_DEVICE_SERIAL_FILE = "/etc/tvemu/serial-number"
+RDKE_DISPLAY_NAME = b"tv-emu TV"
+
+
+def check_rdke_device():
+    """What RDK's services say of the virtual device, asked through Thunder
+    from this host as an application or a developer would: its display, its
+    identity, its power state and its front panel."""
+    def body(viewer, typed, answer, seen, console, lock, slow):
+        asked = _rdke_asker(typed, answer, console, lock)
+        if not _rdke_ui_ready(asked, seen, slow) or not _rdke_thunder_reached(asked, seen, slow):
+            return
+        seen["serial-file"] = asked("serial", "cat %s" % RDKE_DEVICE_SERIAL_FILE, r"\w+")
+        seen["mode"] = asked("mode", "cat /sys/class/drm/card0-*/modes | head -n 1", r"\w+")
+
+        def call(name, method, params=None):
+            try:
+                seen[name] = _rdke_thunder(seen, method, params)
+            except (OSError, ValueError) as error:
+                seen[name] = {"error": "%s: %s" % (type(error).__name__, error)}
+        port = {"videoDisplay": "HDMI0"}
+        # The display settings service is started after the user interface has its keys.
+        _wait(lambda: call("displays", "org.rdk.DisplaySettings.1.getConnectedVideoDisplays") or
+              "error" not in (seen["displays"] or {}), 120 * slow, 2)
+        call("resolution", "org.rdk.DisplaySettings.1.getCurrentResolution", port)
+        call("resolutions", "org.rdk.DisplaySettings.1.getSupportedResolutions", port)
+        call("tv-resolutions", "org.rdk.DisplaySettings.1.getSupportedTvResolutions", port)
+        call("edid", "org.rdk.DisplaySettings.1.readEDID")
+        call("serial", "org.rdk.System.1.getSerialNumber")
+        call("make", "DeviceInfo.1.make")
+        call("model", "DeviceInfo.1.modelid")
+        call("power", "org.rdk.System.1.getPowerState")
+        call("lights", "org.rdk.FrontPanel.1.getFrontPanelLights")
+
+    seen, kind, said = _rdke_session(body)
+    got = lambda name: seen.get(name) if isinstance(seen.get(name), dict) else {}
+    _require(got("displays").get("connectedVideoDisplays") == ["HDMI0"], "the display settings service does not name "
+             "HDMI0 as the connected display: %r" % seen.get("displays"))
+    now = got("resolution")
+    _require((now.get("w"), now.get("h")) == (1920, 1080), "the display settings service gives the current resolution "
+             "as %r, and the display's mode is %s" % (seen.get("resolution"), seen.get("mode")))
+    offered = got("resolutions").get("supportedResolutions") or []
+    _require(any(str(name).startswith("1080p") for name in offered), "the display settings service's supported "
+             "resolutions do not have 1080p: %r" % seen.get("resolutions"))
+    television = got("tv-resolutions").get("supportedTvResolutions") or []
+    _require(any(str(name).startswith("1080p") for name in television), "the television's supported resolutions do not "
+             "have 1080p: %r" % seen.get("tv-resolutions"))
+    try:
+        edid = base64.b64decode(got("edid").get("EDID") or "")
+    except ValueError:
+        edid = b""
+    _require(edid[:8] == bytes.fromhex("00ffffffffffff00") and RDKE_DISPLAY_NAME in edid, "the display settings "
+             "service's description of the display (EDID) is not the virtual device's: %d bytes, %r"
+             % (len(edid), edid[:16]))
+    _require(seen.get("serial-file") and got("serial").get("serialNumber") == seen["serial-file"], "the system service "
+             "gives the serial number as %r, and %s has %r" % (seen.get("serial"), RDKE_DEVICE_SERIAL_FILE,
+                                                               seen.get("serial-file")))
+    _require(got("make").get("make") and got("model").get("sku"), "the device information service names no maker or "
+             "model: %r, %r" % (seen.get("make"), seen.get("model")))
+    _require(got("power").get("powerState") == "ON", "the system service gives the power state as %r"
+             % seen.get("power"))
+    _require("power_led" in (got("lights").get("supportedLights") or []), "the front panel service has no power "
+             "light: %r" % seen.get("lights"))
+    return ["the RDK-E image (%s) started in a %s guest, and RDK's services answered this host through Thunder: the "
+            "display HDMI0 is connected at %sx%s (%s), which is the display's mode (%s), with %d resolutions "
+            "supported (%s) and the television's own (%s)"
+            % (said, kind, now.get("w"), now.get("h"), now.get("resolution"), seen.get("mode"), len(offered),
+               ", ".join(map(str, offered)), ", ".join(map(str, television))),
+            "the display's description (EDID, %d bytes) is the virtual device's, \"%s\"; the serial number is the "
+            "virtual device's (%s), the maker \"%s\" and the model \"%s\"; the power state is ON and the front "
+            "panel has its power light"
+            % (len(edid), RDKE_DISPLAY_NAME.decode(), seen["serial-file"], got("make").get("make"),
+               got("model").get("sku"))]
+
+
+# Pictures a second that reach the launcher's window from a host-native RDK-E guest, at the least.
+# Measured by hand: 59.9 on macOS (ARM64) and on Linux (x86-64) at the home screen (rdke/README.md).
+RDKE_RATE_FLOOR = 50
+RDKE_RATE_SECONDS = 10
+
+
+def check_rdke_rate():
+    """How many pictures a second reach the launcher's window from an RDK-E
+    image: at its user interface's home screen, and while its browser plays
+    the reference stream. The image's compositor shows a picture each
+    refresh of its 60 Hz mode, and the window is to get them."""
+    def body(viewer, typed, answer, seen, console, lock, slow):
+        asked = _rdke_asker(typed, answer, console, lock)
+        if not _rdke_ui_ready(asked, seen, slow):
+            return
+        typed("S() { curl -s -m 60 -d \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":1,\\\"method\\\":"
+              "\\\"$1\\\"${2:+,\\\"params\\\":$2}}\" http://127.0.0.1:9998/jsonrpc; }")
+
+        def rate():
+            first = viewer.ask(do="state").get("updates")
+            start = time.time()
+            time.sleep(RDKE_RATE_SECONDS)
+            last = viewer.ask(do="state").get("updates")
+            return None if first is None or last is None else (last - first) / (time.time() - start)
+        # The user interface goes from its first screen to its home screen by itself.
+        time.sleep(10 * slow)
+        seen["cpus"] = asked("cpus", "nproc")
+        seen["mode"] = asked("mode", "cat /sys/class/drm/card0-*/modes | head -n 1", r"\w+")
+        seen["home"] = rate()
+        started = asked("launch", "S org.rdk.RDKShell.1.launch '{\"callsign\":\"HtmlApp\",\"type\":\"HtmlApp\","
+                        "\"uri\":\"%s?muted\"}' | grep -c '\"success\":true'" % RDKE_VIDEO_PAGE, seconds=180)
+        if started != "1":
+            seen["error"] = "org.rdk.RDKShell's launch did not start the page that plays the reference stream"
+            return
+        playing = _wait(lambda: asked("player", "S HtmlApp.1.url | grep -c '#playing-%s-'" % RDKE_VIDEO_SIZE) == "1",
+                        120 * slow, 1)
+        if not playing:
+            seen["error"] = "the browser did not play the reference stream"
+            return
+        time.sleep(3 * slow)
+        seen["video"] = rate()
+
+    seen, kind, said = _rdke_session(body)
+    home, video = seen.get("home"), seen.get("video")
+    _require(home is not None and video is not None, "the launcher's window did not say how many pictures it got: %r"
+             % seen)
+    line = ("the RDK-E image (%s) started in a %s guest with %s CPUs and the display mode %s, and the launcher's "
+            "window got %.1f pictures a second at the user interface's home screen and %.1f while the browser "
+            "played the reference stream (each counted over %d s)"
+            % (said, kind, seen.get("cpus") or "?", seen.get("mode") or "?", home, video, RDKE_RATE_SECONDS))
+    if kind != "host-native":
+        raise CheckUnavailable(line + "; no number is asked of a guest on a simulated CPU")
+    _require(home >= RDKE_RATE_FLOOR and video >= RDKE_RATE_FLOOR, line + ": fewer than %d" % RDKE_RATE_FLOOR)
+    return [line, "both are at least %d, the least asked of a host-native guest whose compositor shows 60"
+            % RDKE_RATE_FLOOR]
+
+
 def _command_checks():
     return {
         "rootfs-option": (check_rootfs_option, "9.4", "--rootfs chooses the Debian or the RDK-E root file system"),
@@ -3164,6 +3505,14 @@ def _command_checks():
                                                       "image, and the EXIT key ends it"),
         "rdke-video": (check_rdke_video, "9.4", "RDK's browser plays video with sound in an RDK-E image, and both "
                                                 "reach the host"),
+        "rdke-aamp": (check_rdke_aamp, "9.4", "RDK's player AAMP plays an HLS stream with sound in an RDK-E image, "
+                                              "and both reach the host"),
+        "rdke-health": (check_rdke_health, "9.4", "an RDK-E image starts without a failed unit, a restart or a "
+                                                  "crash, and its forwarded ports answer"),
+        "rdke-device": (check_rdke_device, "9.4", "RDK's services describe the virtual device of an RDK-E image: "
+                                                  "display, identity, power"),
+        "rdke-rate": (check_rdke_rate, "9.4", "the launcher's window gets an RDK-E image's pictures at the pace "
+                                              "its compositor shows them"),
         "doctor": (check_doctor, "9.2", "the launcher shows what it finds on the host, and names what is missing"),
         "report-serve": (check_report_serve, "9.2", "the results command serves the page and all that it reads"),
         "report-page": (check_report_page, "9.2", "the results page shows every record and its sections"),

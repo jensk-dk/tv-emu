@@ -17,6 +17,8 @@ S = "${WORKDIR}/git"
 
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 SRC_URI += "file://0001-tvemu-virtual-display-and-device-files.patch"
+SRC_URI += "file://0002-tvemu-display-description-from-a-file.patch"
+SRC_URI += "file://0003-tvemu-count-of-supported-resolutions.patch"
 RDEPENDS:${PN} += "tvemu-device"
 
 DEPENDS = "devicesettings-hal-headers virtual/egl alsa-lib libdrm"

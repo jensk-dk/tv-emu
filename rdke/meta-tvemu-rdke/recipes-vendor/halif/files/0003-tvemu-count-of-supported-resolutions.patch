@@ -1,0 +1,30 @@
+Give the HDMI port type the count of its supported resolutions
+
+The table of video port types names the table of resolutions with a count of
+0, "info available at runtime". RDK's device settings plug-in
+(entservices-devicesettings) takes a port type's supported resolutions from
+this table alone, so with 0 it has none, and the display settings service
+answers getSupportedResolutions with an empty list. The count is set to that
+of the table when the library is loaded. (A Raspberry Pi 4 with this release
+of the hardware layer and that plug-in would have the same empty list; not
+tried on one.)
+
+Upstream-Status: Pending
+
+--- a/dsVideoPort.c
++++ b/dsVideoPort.c
+@@ -2913,4 +2913,14 @@
+     }
+     _preferredColorDepth = colorDepth;
+     return dsERR_NONE;
++}
++
++/* tv-emu: the table of video port types (dsVideoPortSettingsData.c) names the
++ * table of resolutions with a count of 0. RDK's device settings plug-in takes
++ * a port type's supported resolutions from that table and nowhere else, so
++ * it had none, and the display settings service's list of supported
++ * resolutions was empty. The count is that of the table. */
++__attribute__((constructor)) static void tvemuCountSupportedResolutions(void)
++{
++    kVideoPortConfigs[0].numSupportedResolutions = (size_t)kResolutionsSettings_size;
+ }

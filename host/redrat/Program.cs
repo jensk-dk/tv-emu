@@ -52,7 +52,13 @@ internal static class Program
 
     internal static async Task Listen(Device selected, Profile? profile, TextReader input, TextWriter output)
     {
-        using var usb = UsbDeviceFactory.Creator();
+        // Not disposed. Disposing it ends libusb (libusb_exit), and the SDK's reader of the
+        // receiver is then still inside a transfer on one of its own threads, also after the
+        // detector is turned off and the device disconnected below: libusb ended the process
+        // with "Assertion failed: (pthread_mutex_lock(mutex) == 0)" at every close (seen with a
+        // RedRat Pico on macOS). The process ends when this method returns, which releases it.
+        var usb = UsbDeviceFactory.Creator();
+        GC.KeepAlive(usb);
         using var device = selected.Location.GetRedRat();
         if (device is not IRedRat3 receiver)
             throw new NotSupportedException($"Device '{selected.Id}' does not support narrow-band IR capture.");

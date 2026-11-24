@@ -34,6 +34,18 @@ dobby_generic_config_patch () {
 }
 ROOTFS_POSTPROCESS_COMMAND += "dobby_generic_config_patch; "
 
+# Thunder listens on every address of the target, not on its loopback address
+# alone, as RDK-E's middleware-test-image has it for development images. The
+# VM's network is QEMU's own (user mode): nothing reaches the target unless
+# the launcher forwards a port to it, which it does from this host's loopback
+# address and only when asked (--option forward=9998:9998).
+wpeframework_binding_patch () {
+    if [ -f "${IMAGE_ROOTFS}/etc/WPEFramework/config.json" ]; then
+        sed -i "s/127.0.0.1/0.0.0.0/g" ${IMAGE_ROOTFS}/etc/WPEFramework/config.json
+    fi
+}
+ROOTFS_POSTPROCESS_COMMAND += "wpeframework_binding_patch; "
+
 # The SSH server (dropbear.service). RDK's start script for it ends with
 # "DROPBEAR_RSAKEY_DIR is not set" unless /etc/default/dropbear names the
 # directory of the host key, and the unit that makes the key is to make it
@@ -59,6 +71,56 @@ override_dropbear_rsakey_dir () {
     fi
 }
 ROOTFS_POSTPROCESS_COMMAND += "update_dropbearkey_to_rw_path; override_dropbear_rsakey_dir; "
+
+# A journal that holds a whole start. RDK-E keeps 3 MB of it in memory, in two
+# files, which the middleware's services fill in less than a minute: what a
+# unit did at start-up was gone before anyone could ask. A target for
+# development keeps 64 MB (the VM has 2 GB of memory unless a run says
+# otherwise).
+tvemu_journal_size () {
+    conf="${IMAGE_ROOTFS}${sysconfdir}/systemd/journald.conf"
+    if [ -f "$conf" ]; then
+        sed -i -e 's/^RuntimeMaxUse=.*/RuntimeMaxUse=64M/' -e 's/^RuntimeMaxFileSize=.*/RuntimeMaxFileSize=16M/' \
+            -e 's/^RuntimeMaxFiles=.*/RuntimeMaxFiles=4/' "$conf"
+    fi
+}
+ROOTFS_POSTPROCESS_COMMAND += "tvemu_journal_size; "
+
+# One SSH server, not two. The image had both of dropbear's units enabled:
+# RDK's dropbear.service, which listens all the time, and openembedded-core's
+# dropbear.socket, with which systemd listens on port 22 and starts a server
+# for each connection. The service's unit says that it conflicts with the
+# socket, so starting it closes the socket, but at start-up the service was
+# seen to end with "Failed listening on '22': Address already in use" in at
+# least four boots of eight (2026-11-24), and to start at the retry five
+# seconds later. The socket unit is not enabled; the package's preset is
+# changed as well as the link removed, as for the Bluetooth manager below.
+tvemu_no_dropbear_socket () {
+    preset="${IMAGE_ROOTFS}${systemd_unitdir}/system-preset/98-dropbear.preset"
+    if [ -f "$preset" ]; then
+        sed -i 's/^enable dropbear.socket/disable dropbear.socket/' "$preset"
+    fi
+    rm -f ${IMAGE_ROOTFS}${sysconfdir}/systemd/system/sockets.target.wants/dropbear.socket
+}
+ROOTFS_POSTPROCESS_COMMAND += "tvemu_no_dropbear_socket; "
+
+# The client of the operator's cloud (parodus, for WebPA) is not started. It
+# is given the address of its server by the device's configuration, and a
+# virtual device has none: it ended with "Bad webpa url" and an abort
+# (signal 6) at start and was started again every 40 seconds for as long as
+# the VM ran. Seen on 2026-11-24, when the journal first held a whole start.
+tvemu_no_parodus_start () {
+    for preset in ${IMAGE_ROOTFS}${systemd_unitdir}/system-preset/98-sysint.preset \
+                  ${IMAGE_ROOTFS}${systemd_unitdir}/system-preset/98-tr69hostif.preset; do
+        if [ -f "$preset" ]; then
+            sed -i -e 's/^enable \(parodus\.service\|parodus_bsp\.path\|restart-parodus\.path\|restart-parodus\.service\)$/disable \1/' "$preset"
+        fi
+    done
+    for unit in parodus.service parodus_bsp.path restart-parodus.path restart-parodus.service; do
+        find ${IMAGE_ROOTFS}${sysconfdir}/systemd/system -name "$unit" -type l -delete
+    done
+}
+ROOTFS_POSTPROCESS_COMMAND += "tvemu_no_parodus_start; "
 
 # The Bluetooth manager (btmgr.service) is not started. The VM has no
 # Bluetooth controller and its kernel no Bluetooth, so the service ended with
