@@ -214,6 +214,7 @@ class Window(QMainWindow):
             from .gldisplay import GLDisplay
             self.display = GLDisplay()
             self.display.on_failure = self.display_failed
+            self.display.on_note = self.display_noted
             self.feed.buffer.connect(self.display.on_buffer)
             self.client = dbusdisplay.Client(address[len(graphics.DBUS_GL_PREFIX):], self.feed.sized.emit,
                                              self.feed.updated.emit, self.feed.state.emit, self.feed.buffer.emit)
@@ -309,6 +310,12 @@ class Window(QMainWindow):
         once, with the way round it. The window stays, with the same text."""
         print("emu: the window cannot show the target's display: %s. --option window-display=vnc shows it "
               "another way" % text, file=sys.stderr, flush=True)
+
+    def display_noted(self, text):
+        """How the target's pictures reach the window, said once on the
+        terminal: what is asked for when host graphics fails on a host."""
+        self.display_note = text
+        print("emu: window: " + text, file=sys.stderr, flush=True)
 
     def on_size(self, width, height):
         self.display.on_size(width, height)
@@ -492,6 +499,7 @@ class Control(QObject):
                     "connected": window.client.connected, "updates": window.client.updates,
                     "display": [width, height] if window.display.has_picture() else None,
                     "from_gpu": _from_gpu(window.args.display),
+                    "display_note": getattr(window, "display_note", None),
                     # Pictures the window drew, where it counts them (a display from the GPU).
                     "drawn": getattr(window.display, "drawn", None),
                     "display_failure": getattr(window.display, "failure", None),

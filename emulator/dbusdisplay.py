@@ -128,6 +128,64 @@ def _header(connection):
     return kind, flags, serial, fields, body
 
 
+# The listener's second way to get a GPU buffer (QEMU 10.1 and later), which
+# takes one of several planes: QEMU uses it for a listener that says it has it,
+# and otherwise drops a buffer of more than one plane without a word. Some
+# drivers (Intel's) lay a display out in more than one.
+LISTENER_INTERFACE = b"org.qemu.Display1.Listener"
+PLANES_INTERFACE = b"org.qemu.Display1.Listener.Unix.ScanoutDMABUF2"
+SIGNATURE = 8
+
+
+def _properties(interface):
+    """The answer to "GetAll" for one of the listener's interfaces, as a
+    D-Bus a{sv}: "Interfaces" with the optional ones this listener has."""
+    entries = b""
+    if interface == LISTENER_INTERFACE:
+        key = b"Interfaces"
+        entries = struct.pack("<I", len(key)) + key + b"\0" + b"\x02as\0"
+        entries += b"\0" * _pad(8 + len(entries), 4)
+        name = struct.pack("<I", len(PLANES_INTERFACE)) + PLANES_INTERFACE + b"\0"
+        entries += struct.pack("<I", len(name)) + name
+    return struct.pack("<I", len(entries)) + b"\0" * 4 + entries
+
+
+def _planes(body, descriptors):
+    """A ScanoutDMABUF2 message's body as a buffer for the viewer; None if it
+    is not what QEMU's interface says."""
+    at = 0
+
+    def numbers(count):
+        nonlocal at
+        at += _pad(at, 4)
+        found = struct.unpack_from("<%dI" % count, body, at)
+        at += 4 * count
+        return found
+
+    def listed():
+        return numbers(numbers(1)[0] // 4)
+    try:
+        handles = listed()
+        _, _, width, height = numbers(4)        # the place in the buffer is its start in all QEMU sends
+        offsets, strides = listed(), listed()
+        count, fourcc, _, _ = numbers(4)
+        at += _pad(at, 8)
+        modifier = struct.unpack_from("<Q", body, at)[0]
+        at += 8
+        y0_top = numbers(1)[0]
+    except struct.error:
+        return None
+    if not 1 <= count <= 4 or len(offsets) < count or len(strides) < count or not handles \
+            or max(handles) >= len(descriptors):
+        return None
+    # A plane without a descriptor of its own is in the buffer of the one before.
+    planes = [(descriptors[handles[min(plane, len(handles) - 1)]], offsets[plane], strides[plane])
+              for plane in range(count)]
+    return {"descriptor": planes[0][0], "width": width, "height": height, "stride": planes[0][2],
+            "format": fourcc, "modifier": modifier, "top_first": not y0_top, "planes": planes,
+            "descriptors": list(descriptors), "message": "ScanoutDMABUF2"}
+
+
 class _WithDescriptors:
     """A socket whose reads keep the file descriptors that come with the
     bytes, in `descriptors`, in the order they came."""
@@ -317,17 +375,32 @@ class Client(threading.Thread):
                 self._hand_over()
                 continue
             pictures.settimeout(10)
-            self._take(pictures, fields.get(MEMBER), body)
+            answer = self._take(pictures, fields.get(MEMBER), body)
             if kind == METHOD_CALL and not flags & NO_REPLY_EXPECTED:
                 serial += 1
-                pictures.sendall(_message(METHOD_RETURN, serial, [_field(REPLY_SERIAL, b"u", call_serial)]))
+                said = [_field(REPLY_SERIAL, b"u", call_serial)]
+                if answer:
+                    said.append(_field(SIGNATURE, b"g", b"a{sv}"))
+                pictures.sendall(_message(METHOD_RETURN, serial, said, answer or b""))
             self._hand_over()
             pictures.settimeout(0.02)
 
     def _take(self, connection, member, body):
         """Read one message's body: a whole picture (Scanout), a part of one
-        (Update), or something this client has no use for."""
-        if member == b"Scanout" and body >= 20:
+        (Update), or something this client has no use for. Returns the body of
+        the answer where that is not empty: the listener's properties."""
+        answer = None
+        if member == b"GetAll" and self.on_buffer is not None and 4 <= body <= 4096:
+            asked = bytes(_receive(connection, body))
+            answer = _properties(asked[4:4 + struct.unpack_from("<I", asked)[0]])
+        elif member == b"ScanoutDMABUF2" and body <= 4096 and getattr(connection, "descriptors", None):
+            buffer = _planes(bytes(_receive(connection, body)), list(connection.descriptors))
+            if buffer is not None:
+                connection.descriptors.clear()      # the viewer's to close now
+                self._frame, self._fresh = None, False
+                self._set_size(buffer["width"], buffer["height"])
+                self.on_buffer(buffer)
+        elif member == b"Scanout" and body >= 20:
             width, height, stride, pixel_format, length = struct.unpack("<IIIII", bytes(_receive(connection, 20)))
             self._picture(connection, 0, 0, width, height, stride, pixel_format, length, whole=True)
             _receive(connection, body - 20 - length)
@@ -341,7 +414,8 @@ class Client(threading.Thread):
             self._frame, self._fresh = None, False
             self._set_size(width, height)
             self.on_buffer({"descriptor": descriptor, "width": width, "height": height, "stride": stride,
-                            "format": fourcc, "modifier": modifier,
+                            "format": fourcc, "modifier": modifier, "planes": [(descriptor, 0, stride)],
+                            "descriptors": [descriptor],
                             # QEMU's "y0_top" is set for a buffer whose first row is the bottom one:
                             # its own windows turn the picture over when it is not set.
                             "top_first": not y0_top})
@@ -363,6 +437,7 @@ class Client(threading.Thread):
             _receive(connection, body)
         if hasattr(connection, "discard"):
             connection.discard()            # descriptors of a message this client has no use for
+        return answer
 
     def _picture(self, connection, x, y, width, height, stride, pixel_format, length, whole):
         usable = pixel_format in PIXEL_FORMATS and width > 0 and height > 0 and stride >= width * 4 \

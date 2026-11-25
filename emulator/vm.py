@@ -20,6 +20,27 @@ ACCELERATED_CPU = {"kvm": "host", "hvf": "host", "whpx": "max,-vmx,-svm"}
 # What QEMU prints when a hypervisor stops running the guest for good. QEMU
 # itself keeps running after that, so the launcher has to end it.
 GAVE_UP = ("WHPX: Unexpected VP exit code",)
+# What QEMU says when it cannot hand the target's display to the launcher's
+# window as a buffer of the host's GPU, or cannot draw for the target at all.
+# The launcher shows such a line on the terminal: the window then stays
+# without a picture and says nothing itself.
+DISPLAY_TROUBLE = ("failed to get fd for texture", "dbus_scanout_", "dbus_update_gl", "egl: ", "eglCreate",
+                   "no drm render node", "virgl could not be initialized", "failed to initialize venus renderer",
+                   "Display 'dbus'", "opengl is not available", "OpenGL support was not enabled",
+                   "failed to export dmabuf", "Failed to setup dmabuf", "Failed to call update",
+                   "GL rendering is not supported")
+# Those of them that say QEMU could not make a GPU buffer of the target's
+# display for the window: QEMU before 10.1 hands over a buffer of one plane
+# only, and some drivers (Intel's) give the display more.
+NO_BUFFER = ("failed to get fd for texture", "failed to export dmabuf")
+
+
+def display_advice(line):
+    """What to do about a line of DISPLAY_TROUBLE, to print after it."""
+    if any(text in line for text in NO_BUFFER):
+        return (" (this QEMU cannot hand the target's display to the launcher's window as a GPU buffer on this "
+                "host; --option window-display=vnc shows it another way)")
+    return ""
 
 
 def qemu_version(binary):

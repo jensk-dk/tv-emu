@@ -161,8 +161,9 @@ def _renderer_maps_vulkan(binary):
     return True
 
 
-def probe_vm(binary, window=None, launcher_window=False):
+def probe_vm(binary, window=None, launcher_window=False, guest=None):
     """Whether this QEMU can map the guest's graphics to the host's GPU.
+    `guest` is the target's CPU architecture where the caller knows it.
 
     `launcher_window` says that the launcher's own window shows the display:
     on macOS a QEMU with the read-back (dbus_read_back) can feed that window
@@ -173,14 +174,18 @@ def probe_vm(binary, window=None, launcher_window=False):
     display for it) when the emulator's display is shown in one, and otherwise
     a display backend that renders without a window.
     """
-    key = (binary, window, bool(launcher_window))
+    key = (binary, window, bool(launcher_window), guest)
     if key in _probes:
         return _probes[key]
     devices = _qemu_output(binary, "-device", "help")
     displays = _qemu_output(binary, "-display", "help")
     # Vulkan is mapped as well where vm_arguments turns that on.
-    venus = host.host_os() == "linux" and "venus" in _qemu_output(binary, "-device", "virtio-gpu-gl-pci,help") \
-        and _renderer_maps_vulkan(binary)
+    # Not for a 32-bit ARM target: its kernel does not give the Vulkan driver
+    # what it needs from the device ("one of required kernel params (4 or 9)
+    # is missing", Debian 13's armmp-lpae kernel 6.12), so the device would
+    # only be set up differently for nothing.
+    venus = host.host_os() == "linux" and guest != "arm32" \
+        and "venus" in _qemu_output(binary, "-device", "virtio-gpu-gl-pci,help") and _renderer_maps_vulkan(binary)
     mapped = "QEMU maps the target's OpenGL ES%s to the host GPU (virtio-gpu with virglrenderer)" \
              % (" and Vulkan" if venus else "")
     if "virtio-gpu-gl-pci" not in devices:

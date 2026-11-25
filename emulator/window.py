@@ -79,9 +79,16 @@ def probe_buffers():
         done = subprocess.run([python, "-m", "emulator.gui.gldisplay", "--probe"], capture_output=True, text=True,
                               timeout=60, env=_environment())
         lines = [line for line in done.stdout.splitlines() if line.startswith("{")]
+        if not lines:
+            # What Qt or the graphics driver said as it failed, for the reader of "emu doctor".
+            said = " | ".join(line.strip() for line in done.stderr.splitlines()[-3:] if line.strip())
+            return {"available": False, "reason": "the windows' Qt could not be asked whether it takes GPU buffers "
+                                                  "(ended with status %s%s)" % (done.returncode,
+                                                                                ": " + said if said else "")}
         return json.loads(lines[-1])
-    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
-        return {"available": False, "reason": "the windows' Qt could not be asked whether it takes GPU buffers"}
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
+        return {"available": False, "reason": "the windows' Qt could not be asked whether it takes GPU buffers "
+                                              "(%s)" % error}
 
 
 class Viewer:

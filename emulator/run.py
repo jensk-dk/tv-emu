@@ -417,7 +417,8 @@ def launch(opts):
             # (A display that is captured for --screenshot comes from QEMU's VNC server, which the
             # launcher's window on macOS has no part in.)
             display = _display_plan(opts, lambda: graphics.probe_vm(qemu, None if own else kind,
-                                                                    launcher_window=own and not opts.screenshot_dir),
+                                                                    launcher_window=own and not opts.screenshot_dir,
+                                                                    guest=guest),
                                     kind, always=rdke)
             if display and rdke_emulated:
                 # Linux: a display that the host's GPU draws comes at 60 only from QEMU 11 on.
@@ -689,6 +690,7 @@ def _capture(command, opts, outcome, interactive, screens=None, console=None, st
     if opts.rootfs == rootfs.RDKE:
         ready.set()     # this target never reports that it is ready: its console takes input from the start
     lock = threading.Lock()
+    display_trouble = []
 
     def take(stream):
         try:
@@ -701,6 +703,11 @@ def _capture(command, opts, outcome, interactive, screens=None, console=None, st
                     _parse(line, outcome, ready, screens)
                     if opts.on_line:
                         opts.on_line(line)
+                    if opts.mode == "vm" and not opts.echo and len(display_trouble) < 5 \
+                            and line not in display_trouble and any(text in line for text in vm.DISPLAY_TROUBLE):
+                        display_trouble.append(line)
+                        print("emu: QEMU about the display: %s%s" % (line.strip(), vm.display_advice(line)),
+                              file=sys.stderr, flush=True)
                     if opts.mode == "vm" and any(text in line for text in vm.GAVE_UP):
                         outcome.notes.append("the hypervisor stopped running the target; the emulator was ended")
                         process.kill()

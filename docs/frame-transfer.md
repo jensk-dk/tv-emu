@@ -281,10 +281,66 @@ Also seen:
   was older than the checks.
 - **QEMU ends on a failed assertion when the target shuts down** while a
   listener for GPU buffers is there (`dbus_scanout_texture: Assertion
-  'tex_id' failed`, QEMU 8.2.2; the same line is in 11.0.0's source). The
+  'tex_id' failed`, QEMU 8.2.2 and 11.0.0 as released). The
   launcher has the window let go of the display when a workload reports
   its exit status, which avoids it. An RDK-E target that is shut down from
-  inside, and not by closing the window, still ends QEMU that way.
+  inside, and not by closing the window, still ends QEMU 8.2.2 that way.
+  The QEMU 11.0.0 that the setup script builds has a change for it
+  ([linux-experimental-qemu.patch](linux-experimental-qemu.patch)): a
+  scanout without a texture tells the listener that the display is off.
+  Tried with the launcher's workaround switched off: QEMU 8.2.2 and
+  11.0.0 as released end with status -6 after the workload, the changed
+  11.0.0 ends as it should.
+
+### QEMU 11 from the setup script, with Vulkan on the host's GPU
+
+`./setup.sh --experimental-qemu --arm-targets` builds QEMU 11.0.0 and
+virglrenderer 1.3.0 with the Vulkan mapping (Venus) for the three guest
+architectures (README, "Linux"). The first run of every check with it, on
+2026-11-25, had nine checks fail that pass with QEMU 8.2.2: the four
+`video-*-vm` checks, the same four for ARM64, and `gles-vm-arm32`. All of
+the video failures came from the one case in which `mpv` draws with
+Vulkan, which with QEMU 8.2.2 is drawn by the target's CPU:
+
+- **A window format with 16 bits a channel ended the compositor's
+  drawing.** `mpv` takes the deepest format on offer, and on the virtual
+  GPU that was `R16G16B16A16_UNORM`. Its pictures go to the compositor as
+  GPU buffers, the compositor draws with the virtual GPU's OpenGL ES, and
+  the host has to take each buffer into its own OpenGL ES
+  (`vrend_renderer_pipe_resource_set_type: failed to create egl image`).
+  NVIDIA's EGL names no layout for `ABGR16161616` (asked with
+  `eglQueryDmaBufModifiersEXT`; it names thirteen for the 8-bit, the
+  10-bit and the 16-bit float formats). After the one refusal the host
+  renderer treats the compositor's context as faulty ("Illegal command
+  buffer"), and every picture after it was the one before or black, for
+  every program. That is why the cases after the Vulkan one failed too.
+  Now a Vulkan layer in the image
+  ([target/src/emu_vulkan_formats.c](../target/src/emu_vulkan_formats.c))
+  leaves the 16-bit formats out of what a program is offered on the
+  virtual GPU; `mpv` then takes `A2R10G10B10_UNORM`.
+- **The player's own transfer queue ended the host's Vulkan device.** With
+  the format out of the way, the first frame gave
+  `VK_ERROR_DEVICE_LOST` from the host's `vkQueueSubmit2` (seen with a
+  virglrenderer that says where it gives up; the host's kernel log has
+  `NVRM: Xid 32` from the renderer's thread), and `mpv` aborted. With
+  `--vulkan-async-transfer=no` it plays; `--vulkan-async-compute=no` alone
+  does not help, and `--vo=gpu-next` plays as well. The `media-decode`
+  workload now passes the first.
+- **A 32-bit ARM target has no Vulkan through the virtual GPU.** Mesa says
+  "one of required kernel params (4 or 9) is missing" with Debian 13's
+  kernel for it. The launcher no longer turns the Vulkan mapping on for
+  that target, so its display device is set up as with QEMU 8.2.2.
+  `vulkan-vm-arm32` and `video-vulkan-vm-arm32` fail with both QEMUs: the
+  target's CPU renderer for Vulkan ends there with "malloc(): invalid
+  size", and the compositor often ends with it and is started again.
+  `gles-vm-arm32` failed once with QEMU 11 ("lost the connection to the
+  Wayland compositor") and passed in two runs after; whether the Vulkan
+  mapping had a part in it is not known.
+
+With these, on the same host: `video-wayland-vm`, `video-gles-vm`,
+`video-vulkan-vm` and `video-flutter-vm` pass with QEMU 11.0.0, the Vulkan
+case played by "Virtio-GPU Venus (NVIDIA GeForce RTX 4070)" with no frame
+dropped. FULLRUN
 
 ## Measured on the Mac
 
@@ -462,9 +518,11 @@ build, and is of no use on macOS (above).
    graphics needs 8 CPUs for 57. Either alone gives 30 (point 2) or 22
    (point 3, over VNC).
 4. **Before QEMU 11 becomes the launcher's on Linux**: the slower CPU-drawn
-   display seen with it (above) has to be understood, and the setup script
-   has to provide it, with the ARM targets. The launcher itself starts it
-   and passes its checks with it (above).
+   display seen with it (above) has to be understood, and Vulkan on the
+   host's GPU has to be tried on a host with Mesa's drivers. The setup
+   script provides it, with the ARM targets (`--experimental-qemu`), and
+   the launcher's checks were run with it ("QEMU 11 from the setup
+   script", above).
 
 ### macOS
 
@@ -502,17 +560,14 @@ and QEMU chooses by that.
 
 ## Not verified
 
-- **Vulkan with QEMU 11.** The virglrenderer built here has no Vulkan
-  mapping (the host lacks Vulkan's development files), so the target's
-  Vulkan stays on its CPU with that build, as with QEMU 8.2.2.
-- **A QEMU 11 that the setup script provides on Linux.** The one used here
-  was built by hand into a scratch directory, for x86-64 targets only.
+- **Vulkan on the host's GPU with other drivers than NVIDIA's.** Both
+  faults found with it (above) are about what NVIDIA's driver takes. Mesa's
+  drivers may take the 16-bit buffers and the transfer queue; the layer and
+  the player's option are there on every host all the same.
+- **Vulkan programs other than `mpv` and the graphics test.**
 - **Why the CPU-drawn display is slower with the QEMU 11.0.0 built here**
   (44 to 54 a second against 55 to 60).
-- **QEMU 11 on Linux beyond the host-native VM.** The launcher's checks
-  were run with it for the host-native VM and the RDK-E image only (above):
-  the build has no ARM targets, the full `./emu verify` was not run with
-  it, and the target's sound was not listened to.
+- **The target's sound with QEMU 11** was not listened to.
 - **Whether a picture is ever shown half drawn.** None was seen in the
   captures; nothing looked for one. The target shows its pictures from two
   buffers in turn, so the one the window draws from is not being written.

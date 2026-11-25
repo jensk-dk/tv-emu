@@ -79,7 +79,7 @@ needed.
 | Qt for Python (`PySide6-Essentials`) | the launcher's windows: display window, on-screen remote control, settings window | pip, into a Python environment of the project's own (`build/host/gui`) | the same; the libraries Qt loads come as system packages | pip, into `build\host\gui` |
 | RedRat SDK bridge | receiving IR and learning remote profiles | .NET 10 SDK in `build/host/dotnet`, RedRat NuGet package, Homebrew `libusb` | the same private SDK and package, system libusb/runtime libraries, active-desktop-user USB permission rule | private SDK and package, official RedRat USB driver (elevated installation wizard) |
 | Audio player (optional) | playing the target's sound on the host | built by the launcher with the Command Line Tools' compiler | `pacat`, `pw-cat` or `aplay`; system package | the launcher's own, run by Python; nothing to install |
-| QEMU OpenGL modules (optional) | mapping VM graphics to the host GPU | not in Homebrew's QEMU; an experimental build has them, installed only with `./setup.sh --experimental-qemu` (see [Experimental: host graphics on macOS](#experimental-host-graphics-on-macos)) | system package | in winget's QEMU; used when the display is in a window (see [Display and graphics](#display-and-graphics)) |
+| QEMU OpenGL modules (optional) | mapping VM graphics to the host GPU | not in Homebrew's QEMU; an experimental build has them, installed only with `./setup.sh --experimental-qemu` (see [Experimental: host graphics on macOS](#experimental-host-graphics-on-macos)) | system package; `./setup.sh --experimental-qemu` builds QEMU 11 beside it (see [Linux](#linux)) | in winget's QEMU; used when the display is in a window (see [Display and graphics](#display-and-graphics)) |
 
 An existing Docker or Podman installation is used as it is. Where both are
 installed, Docker is used when its engine answers. To choose, set the
@@ -208,6 +208,9 @@ removes it. With `--check` (`-Check`) it only lists.
   and volume in it. On Linux the same goes for Podman's storage, where the
   script installed Podman. The target images the launcher built are among
   those.
+- The QEMU that the script built on Linux (`build/host/qemu`) is removed
+  with the rest; packages that were installed for its build are in the
+  record like any other.
 - The experimental QEMU on macOS is removed with the rest, with its tap and
   Homebrew's trust in it. Homebrew keeps that trust outside itself, in
   `~/.homebrew/trust.json`, where its uninstaller leaves it: where Homebrew
@@ -364,6 +367,60 @@ in containers (Fedora, openSUSE Tumbleweed, Arch Linux).
   them to that. `setup.sh` reports this and does not install GPU drivers.
   (After a kernel update, check that the driver's kernel module was updated
   with it: `./emu doctor` shows whether host acceleration is available.)
+- **QEMU 11, built by the setup script on request.** A QEMU before 11 holds
+  a target that draws with the host's GPU to 30 pictures a second
+  ([docs/frame-transfer.md](docs/frame-transfer.md)); Ubuntu 24.04 has
+  8.2.2.
+
+      ./setup.sh --experimental-qemu [--arm-targets]
+
+  builds QEMU 11.0.0 with virglrenderer 1.3.0, libepoxy and libslirp from
+  source into `build/host/qemu`: each source at one pinned version, the
+  emulator for the host's CPU and, with `--arm-targets`, those of the
+  simulated ARM targets. The build has the mapping of Vulkan to the host's
+  GPU (Venus), which the distribution's does not, and one change to QEMU
+  ([docs/linux-experimental-qemu.patch](docs/linux-experimental-qemu.patch)):
+  it no longer ends on a failed assertion when a target shuts down while
+  the launcher's window takes the GPU's buffers. What the build needs of
+  the host and lacks (a compiler, Ninja, patch, the development files of
+  GLib, pixman, GBM, EGL and libdrm) is installed with the package manager.
+  The launcher uses the build only when a run names it, as on macOS:
+
+      EMU_QEMU_DIR=build/host/qemu/bin ./emu run --mode vm --graphics host --window
+
+  On the Kubuntu host the build took 3 minutes for the three emulators and
+  takes 675 MB; that host had every package the build needs, so installing
+  them was not run there. The package lists were tried in containers of
+  Ubuntu 24.04, Fedora 45, Arch Linux and openSUSE Tumbleweed on
+  2026-11-25: each installs and leaves nothing lacking; the build itself
+  was run on Kubuntu only. The build has no window of QEMU's own (no SDL
+  or GTK): the launcher's window shows the display.
+- **Vulkan on the host's GPU, with that build.** Two things in the target
+  make it work on a host with NVIDIA's driver, where a program's Vulkan
+  pictures reach the compositor as GPU buffers that the host has to take
+  into its OpenGL ES:
+  - Programs are not offered window formats with 16 bits a channel on the
+    virtual GPU (a Vulkan layer in the image,
+    [target/src/emu_vulkan_formats.c](target/src/emu_vulkan_formats.c)).
+    NVIDIA's driver takes no such buffer, and one refused buffer ended the
+    compositor's drawing for every program after it. `mpv` picks that
+    format when it is on offer. `EMU_VULKAN_ALL_FORMATS=1` in the target
+    turns the layer off for a program.
+  - The `media-decode` workload starts `mpv` with
+    `--vulkan-async-transfer=no`. With a transfer queue of its own, the
+    first frame ended the host's Vulkan device (the host's kernel log has
+    "Xid 32").
+
+  A 32-bit ARM target gets OpenGL ES on the host's GPU only: its kernel
+  lacks what the Vulkan driver needs of the device.
+- **What the launcher says about the display.** A run with host graphics
+  in the launcher's window prints one line that starts with `emu: window:`:
+  how the target's display reached the window (the buffer's format, layout,
+  planes, and which of QEMU's two messages carried it) and what took it
+  (the graphics driver, EGL, Qt's platform, the session). A line that
+  starts with `emu: QEMU about the display:` is QEMU's own complaint.
+  `./emu doctor` has the same about the window's side. These are what to
+  send when host graphics fails on a host.
 
 ### Windows
 

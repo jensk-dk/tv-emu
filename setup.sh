@@ -19,6 +19,12 @@
 #                        third-party software built from source, not a
 #                        dependency, and never installed without this option;
 #                        see "Experimental: host graphics on macOS" in the README
+#                        Linux: also build QEMU 11 and virglrenderer from
+#                        source, into build/host/qemu. The distribution's QEMU
+#                        has host graphics already; a QEMU before 11 holds a
+#                        target that draws with the host's GPU to 30 pictures
+#                        a second (docs/frame-transfer.md). With --arm-targets
+#                        the build has the ARM emulators as well
 #   ./setup.sh --uninstall
 #                        remove what this script installed on this host (asks
 #                        first; with --check it only lists what that is)
@@ -104,8 +110,8 @@ EXP_PATCH="$(cd "$(dirname "$0")" && pwd)/docs/macos-experimental-qemu.patch"
 EXP_PATCH_BEFORE=c8f38555f975708be72eb2d0b2bac26ec3c8f832
 # What a QEMU with that change names among its trace points.
 EXP_QEMU_MARK=dbus_gl_read_back
-if [ "$EXPERIMENTAL_QEMU" = 1 ] && ! { [ "$OS" = Darwin ] && [ "$ARCH" = arm64 ]; }; then
-  echo "setup.sh: --experimental-qemu is for macOS on ARM64; on Linux, host graphics comes with the distribution's QEMU" >&2
+if [ "$EXPERIMENTAL_QEMU" = 1 ] && ! { [ "$OS" = Darwin ] && [ "$ARCH" = arm64 ]; } && [ "$OS" != Linux ]; then
+  echo "setup.sh: --experimental-qemu is for macOS on ARM64 and for Linux" >&2
   exit 2
 fi
 if [ "$UNINSTALL" = 1 ] && [ "$EXPERIMENTAL_QEMU" = 1 ]; then
@@ -132,6 +138,28 @@ DOTNET_DIR="$PROJECT_ROOT/build/host/dotnet"
 REDRAT_DIR="$PROJECT_ROOT/build/host/redrat"
 REDRAT_PACKAGES="$PROJECT_ROOT/build/host/redrat-packages"
 REDRAT_RULE=/etc/udev/rules.d/70-tv-emu-redrat.rules
+
+# The QEMU that --experimental-qemu builds on Linux: QEMU 11 with a
+# virglrenderer that it answers the GPU's fences with as they come, where the
+# QEMU and virglrenderer of the distribution this was written on (Ubuntu
+# 24.04: 8.2.2 and 1.0.0) look every 10 ms and hold a target that draws with
+# the host's GPU to 30 pictures a second. Each source is taken at one version:
+# QEMU's archive by its checksum, the others by their commit. libepoxy and
+# libslirp are built as well, so that the host needs no development package
+# of them. The launcher uses the build only when EMU_QEMU_DIR names it.
+LINUX_QEMU_DIR="$PROJECT_ROOT/build/host/qemu"
+LINUX_QEMU_VERSION=11.0.0
+LINUX_QEMU_SHA256=c04ca36012653f32d11c674d370cf52a710e7d3f18c2d8b63e4932052a4854d6
+# name, repository, tag, commit
+LINUX_QEMU_SOURCES="libepoxy https://github.com/anholt/libepoxy.git 1.5.10 c84bc9459357a40e46e2fec0408d04fbdde2c973
+libslirp https://gitlab.freedesktop.org/slirp/libslirp.git v4.9.7 ce12dcddf710a71dc0de6450ec95edbadf8e9f66
+virglrenderer https://gitlab.freedesktop.org/virgl/virglrenderer.git virglrenderer-1.3.0 ca50e008863837e094747a69974dde3ae148aeaa"
+# What a build is made of, as its stamp says it: a build with another line is
+# built again.
+# One change to QEMU's source: it no longer ends on a failed assertion when a
+# target shuts down while the launcher's window takes the GPU's buffers.
+LINUX_QEMU_PATCH="$(cd "$(dirname "$0")" && pwd)/docs/linux-experimental-qemu.patch"
+LINUX_QEMU_RECIPE="qemu $LINUX_QEMU_VERSION libepoxy 1.5.10 libslirp 4.9.7 virglrenderer 1.3.0 venus recipe 2"
 REDRAT_RULE_SOURCE="$PROJECT_ROOT/host/70-tv-emu-redrat.rules"
 
 MISSING=""          # space-separated dependency keys still missing
@@ -497,6 +525,50 @@ check_graphics() {
   fi
 }
 
+# The emulators that the Linux build is to have: the one for the host's own
+# CPU, and with --arm-targets those of the simulated ARM targets.
+linux_qemu_targets() {
+  local native=x86_64-softmmu
+  [ "$ARCH" = arm64 ] && native=aarch64-softmmu
+  if [ "$ARM_TARGETS" = 1 ]; then
+    if [ "$ARCH" = arm64 ]; then echo "$native arm-softmmu"; else echo "$native aarch64-softmmu arm-softmmu"; fi
+  else
+    echo "$native"
+  fi
+}
+
+# Whether the Linux build is the one this script would make: of the same
+# sources, with every emulator that is asked for now.
+linux_qemu_current() {
+  local stamp="$LINUX_QEMU_DIR/tv-emu-build" target
+  [ -x "$LINUX_QEMU_DIR/bin/$QEMU_NATIVE" ] && [ -f "$stamp" ] || return 1
+  [ "$(sed -n 1p "$stamp")" = "$LINUX_QEMU_RECIPE" ] || return 1
+  for target in $(linux_qemu_targets); do
+    sed -n 2p "$stamp" | tr ' ' '\n' | grep -qx "$target" || return 1
+  done
+}
+
+check_experimental_qemu_linux() {
+  local bin="$LINUX_QEMU_DIR/bin/$QEMU_NATIVE" version
+  if [ -x "$bin" ]; then
+    version=$("$bin" --version 2>/dev/null | head -1)
+    if linux_qemu_current; then
+      ok "QEMU built by this script: ${version#QEMU emulator version } with virglrenderer 1.3.0 ($(sed -n 2p "$LINUX_QEMU_DIR/tv-emu-build")); the launcher uses it when EMU_QEMU_DIR=$LINUX_QEMU_DIR/bin"
+    elif [ "$EXPERIMENTAL_QEMU" = 1 ]; then
+      optional experimental-qemu "QEMU built by this script: the build in $LINUX_QEMU_DIR is not the one this script makes now (${version:-it does not run}; other sources, or without an emulator that is asked for); it is built again"
+    else
+      note "QEMU built by this script: the build in $LINUX_QEMU_DIR is not the one this script makes now (./setup.sh --experimental-qemu builds it again; with --arm-targets it has the ARM emulators)"
+    fi
+  elif [ "$EXPERIMENTAL_QEMU" = 1 ]; then
+    optional experimental-qemu "QEMU $LINUX_QEMU_VERSION built by this script, for host graphics at the display's rate: not installed"
+  elif qemu_has_gl; then
+    version=$("$QEMU_NATIVE" --version 2>/dev/null | sed -n '1s/^QEMU emulator version \([0-9]*\).*/\1/p')
+    if [ -n "$version" ] && [ "$version" -lt 11 ]; then
+      note "host graphics in VM mode: this QEMU ($version) holds a target that draws with the host's GPU to 30 pictures a second; ./setup.sh --experimental-qemu builds QEMU $LINUX_QEMU_VERSION, which does not"
+    fi
+  fi
+}
+
 # Prints the experimental QEMU's emulator, if that build is installed.
 experimental_qemu() {
   have brew || return 1
@@ -511,6 +583,7 @@ experimental_qemu_current() {      # the emulator
 
 # Reported wherever it is installed; asked for only with --experimental-qemu.
 check_experimental_qemu() {
+  if [ "$OS" = Linux ]; then check_experimental_qemu_linux; return 0; fi
   [ "$OS" = Darwin ] && [ "$ARCH" = arm64 ] || return 0
   local bin version
   if bin=$(experimental_qemu); then
@@ -953,6 +1026,130 @@ install_experimental_qemu() (
 
 # Whether the user is in a group, as the group database has it (a session
 # that is already open does not see a change).
+# What the build of QEMU on Linux needs of the host and lacks: programs, and
+# the development files of the libraries that are not built with it.
+linux_qemu_build_gaps() {
+  local tool module gaps=""
+  for tool in cc make ninja pkg-config git curl tar xz patch; do
+    have "$tool" || gaps="$gaps $tool"
+  done
+  python3 -c 'import venv, ensurepip' 2>/dev/null || gaps="$gaps python3-venv"
+  if have pkg-config; then
+    for module in glib-2.0 gio-unix-2.0 pixman-1 gbm egl libdrm; do
+      pkg-config --exists "$module" 2>/dev/null || gaps="$gaps $module"
+    done
+  fi
+  have gdbus-codegen || gaps="$gaps gdbus-codegen"
+  echo $gaps
+}
+
+# The distribution's packages that have all of those.
+linux_qemu_build_packages() {
+  if have apt-get; then
+    echo "build-essential ninja-build pkg-config git curl xz-utils python3-venv libglib2.0-dev libpixman-1-dev libgbm-dev libegl-dev libdrm-dev"
+  elif have dnf; then
+    echo "gcc make patch ninja-build pkgconf-pkg-config git curl xz python3 glib2-devel pixman-devel mesa-libgbm-devel mesa-libEGL-devel libdrm-devel"
+  elif have pacman; then
+    echo "base-devel ninja git curl xz python glib2 glib2-devel pixman mesa libdrm"
+  elif have zypper; then
+    echo "gcc make patch ninja pkgconf-pkg-config git curl xz python3 glib2-devel libpixman-1-0-devel libgbm-devel Mesa-libEGL-devel libdrm-devel"
+  fi
+}
+
+# Builds QEMU and what it is built on, in a work directory beside the place
+# it is installed to. The place is replaced only by a finished build.
+install_experimental_qemu_linux() (
+  info "Building QEMU $LINUX_QEMU_VERSION..."
+  final="$LINUX_QEMU_DIR"; work="$final.build"; staged="$work/staged$final"; log="$work/build.log"
+  gaps=$(linux_qemu_build_gaps)
+  if [ -n "$gaps" ]; then
+    pkgs=$(linux_qemu_build_packages)
+    if [ -z "$pkgs" ]; then
+      info "  The build needs these, which the host lacks: $gaps. Install them and run this again."
+      return 1
+    fi
+    info "  The build needs these, which the host lacks: $gaps."
+    if have apt-get; then as_root apt-get update || return 1; fi
+    before=$(installed_packages)
+    # shellcheck disable=SC2086
+    if have apt-get; then as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y $pkgs
+    elif have dnf; then as_root dnf install -y $pkgs
+    elif have pacman; then as_root pacman -S --needed --noconfirm $pkgs
+    else as_root zypper --non-interactive install $pkgs
+    fi || { info "  The packages the build needs could not be installed."; return 1; }
+    # shellcheck disable=SC2086
+    record_added "$before" $pkgs
+    gaps=$(linux_qemu_build_gaps)
+    [ -z "$gaps" ] || { info "  Still lacking after that: $gaps."; return 1; }
+  fi
+
+  rm -rf "$work" && mkdir -p "$work/src" || return 1
+  cd "$work/src" || return 1
+  said() { info "  $*"; }
+  failed() { info "  ! $1; the last lines of $log:"; tail -25 "$log" | sed 's/^/    /'; }
+
+  said "fetching QEMU $LINUX_QEMU_VERSION (download.qemu.org)"
+  archive="qemu-$LINUX_QEMU_VERSION.tar.xz"
+  curl -sSfL -o "$archive" "https://download.qemu.org/$archive" > "$log" 2>&1 ||
+    { failed "QEMU's source could not be fetched"; return 1; }
+  found=$( (sha256sum "$archive" 2>/dev/null || shasum -a 256 "$archive") | cut -d' ' -f1)
+  [ "$found" = "$LINUX_QEMU_SHA256" ] ||
+    { info "  ! $archive is not the archive this script was written with (sha256 $found)"; return 1; }
+  tar xf "$archive" || return 1
+  patch -d "qemu-$LINUX_QEMU_VERSION" -p1 < "$LINUX_QEMU_PATCH" >> "$log" 2>&1 ||
+    { failed "this project's change to QEMU ($LINUX_QEMU_PATCH) does not apply"; return 1; }
+  while read -r name repository tag commit; do
+    said "fetching $name $tag"
+    git -c advice.detachedHead=false clone -q --depth 1 -b "$tag" "$repository" "$name" >> "$log" 2>&1 ||
+      { failed "$name could not be fetched"; return 1; }
+    [ "$(git -C "$name" rev-parse HEAD)" = "$commit" ] ||
+      { info "  ! $name $tag is not at the commit this script was written with ($(git -C "$name" rev-parse HEAD))"; return 1; }
+  done <<SOURCES
+$LINUX_QEMU_SOURCES
+SOURCES
+
+  # Meson, for the three libraries: the one QEMU's source carries.
+  python3 -m venv "$work/venv" >> "$log" 2>&1 &&
+    "$work/venv/bin/pip" -q install --no-index "qemu-$LINUX_QEMU_VERSION"/python/wheels/meson-*.whl >> "$log" 2>&1 ||
+    { failed "Meson could not be set up from QEMU's source"; return 1; }
+  meson="$work/venv/bin/meson"
+  # Everything is built for the place it ends in, where it finds its
+  # libraries on its own, and is installed into the work directory first.
+  export PKG_CONFIG_PATH="$staged/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+  export LDFLAGS="-Wl,-rpath,$final/lib" LD_LIBRARY_PATH="$staged/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  library() {     # name, Meson options
+    name=$1; shift
+    said "building $name"
+    "$meson" setup "$name/build" "$name" --prefix="$final" --libdir=lib --buildtype=release "$@" >> "$log" 2>&1 &&
+      ninja -C "$name/build" >> "$log" 2>&1 && DESTDIR="$work/staged" ninja -C "$name/build" install >> "$log" 2>&1 ||
+      { failed "$name could not be built"; return 1; }
+    # The files that say where a library is name its final place: the next
+    # build is to find it in the work directory.
+    sed -i "s|^prefix=.*|prefix=$staged|" "$staged"/lib/pkgconfig/*.pc
+  }
+  library libepoxy -Dtests=false -Dglx=no -Dx11=false -Degl=yes || return 1
+  library libslirp || return 1
+  library virglrenderer -Dvenus=true -Dtests=false || return 1
+
+  targets=$(linux_qemu_targets)
+  said "building QEMU ($targets); this takes some minutes"
+  mkdir -p qemu-build && cd qemu-build || return 1
+  "../qemu-$LINUX_QEMU_VERSION/configure" --prefix="$final" --libdir=lib --target-list="$(echo $targets | tr ' ' ',')" \
+    --enable-kvm --enable-opengl --enable-virglrenderer --enable-dbus-display --enable-slirp --enable-vnc \
+    --disable-docs --disable-werror --disable-gtk --disable-sdl --disable-spice --disable-guest-agent \
+    >> "$log" 2>&1 || { failed "QEMU could not be configured"; return 1; }
+  ninja >> "$log" 2>&1 && DESTDIR="$work/staged" ninja install >> "$log" 2>&1 ||
+    { failed "QEMU could not be built"; return 1; }
+  sed -i "s|^prefix=.*|prefix=$final|" "$staged"/lib/pkgconfig/*.pc
+  printf '%s\n%s\n' "$LINUX_QEMU_RECIPE" "$targets" > "$staged/tv-emu-build"
+
+  rm -rf "$final" && mv "$staged" "$final" || { info "  ! the build could not be moved to $final"; return 1; }
+  record qemu-tree "$final"
+  cd "$PROJECT_ROOT" && rm -rf "$work"
+  "$final/bin/$QEMU_NATIVE" --version > /dev/null 2>&1 || { info "  ! the QEMU in $final does not run"; return 1; }
+  said "installed in $final; the launcher uses it when EMU_QEMU_DIR=$final/bin"
+)
+
 in_group() { id -nG "$(id -un)" | tr ' ' '\n' | grep -qx "$1"; }
 
 add_to_group() {
@@ -1092,6 +1289,9 @@ install_linux() {
   if is_missing kvm; then
     add_to_group "$(stat -c %G /dev/kvm 2>/dev/null || echo kvm)"
   fi
+  if is_optional experimental-qemu; then
+    install_experimental_qemu_linux || return 1
+  fi
 }
 
 # -------------------------------------------------------------- uninstall ---
@@ -1101,7 +1301,7 @@ install_linux() {
 # the record where this script installed it; it goes with all that is
 # installed with it, before the entries of that. Its trust in a tap is not
 # installed with it, and is taken back as Homebrew goes (remove_entry).
-REMOVE_ORDER="service group binfmt engine-image colima-vm python-env redrat-tree redrat-rule link dir homebrew brew brew-tap brew-trust apt dnf pacman zypper"
+REMOVE_ORDER="service group binfmt engine-image colima-vm python-env redrat-tree qemu-tree redrat-rule link dir homebrew brew brew-tap brew-trust apt dnf pacman zypper"
 # The kinds it lists and leaves: other software on the host can have come to
 # use them, and removing them takes root rights.
 LEAVE_ORDER="xcode-select xcode-clt"
@@ -1156,6 +1356,7 @@ entry_present() {
     dir) [ -d "$2" ] ;;
     python-env) [ -f "$2/pyvenv.cfg" ] ;;
     redrat-tree) [ -d "$2" ] ;;
+    qemu-tree) [ -d "$2" ] ;;
     redrat-rule) [ -e "$2" ] ;;
     brew) have brew && brew_installed "$2" ;;
     brew-tap) have brew && [ -d "$(brew --repository "$2" 2>/dev/null)" ] ;;
@@ -1179,6 +1380,7 @@ entry_text() {
     dir) echo "the directory $2, if it is empty" ;;
     python-env) echo "the Python environment $2, with Qt for Python (the launcher's windows)" ;;
     redrat-tree) echo "the RedRat support directory $2" ;;
+    qemu-tree) echo "the QEMU that this script built, in $2" ;;
     redrat-rule) echo "the RedRat USB permission rule $2" ;;
     homebrew) echo "Homebrew itself, which this script installed, with every package installed with it: $(brew_packages | grep -c .) now" ;;
     brew) echo "the Homebrew package $2" ;;
@@ -1289,6 +1491,11 @@ remove_entry() {
         /*/build/host/dotnet|/*/build/host/redrat|/*/build/host/redrat-packages|/*/build/host/redrat-bin|/*/build/host/redrat-obj)
           run rm -rf "$value" || status=1 ;;
         *) info "  ! $value is not a RedRat support directory; it stays."; status=1 ;;
+      esac ;;
+    qemu-tree)
+      case "$value" in
+        /*/build/host/qemu) [ -f "$value/tv-emu-build" ] && run rm -rf "$value" || status=1 ;;
+        *) info "  ! $value is not where this script builds QEMU; it stays."; status=1 ;;
       esac ;;
     redrat-rule)
       if [ "$value" = "$REDRAT_RULE" ] && cmp -s "$REDRAT_RULE_SOURCE" "$value"; then
@@ -1681,7 +1888,15 @@ elif [ "$OS" = Darwin ]; then
     info "beside Homebrew's QEMU, and the launcher uses it only when EMU_QEMU_DIR names it."
   fi
 else
-  info "These are installed with the system package manager and need root (sudo)."
+  [ -z "$MISSING" ] && [ "$(echo $OPTIONAL)" = experimental-qemu ] ||
+    info "These are installed with the system package manager and need root (sudo)."
+  if is_optional experimental-qemu; then
+    info "QEMU $LINUX_QEMU_VERSION is built from source, with virglrenderer, libepoxy and libslirp, into"
+    info "$LINUX_QEMU_DIR ($(linux_qemu_targets)). That takes some minutes and"
+    info "some GB of disk while it runs. What the build needs of the host and lacks is installed"
+    info "with the system package manager (root). The launcher uses the build only when"
+    info "EMU_QEMU_DIR names it."
+  fi
 fi
 if is_optional experimental-qemu; then
   # Asked for by name, so not installing it is not a success.

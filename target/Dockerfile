@@ -60,6 +60,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends libweston-14-de
     && rm -rf /var/lib/apt/lists/*
 COPY src/emuscreen.c src/emukeys.c src/emu_remote.c src/build-display-tools.sh /src/
 RUN sh /src/build-display-tools.sh /src /out
+# A Vulkan layer that keeps programs on the virtual GPU off window formats
+# that not every host takes (its manifest is in rootfs/usr/share/vulkan).
+COPY src/emu_vulkan_formats.c /src/
+RUN gcc -O2 -Wall -Wextra -shared -fPIC -fvisibility=hidden -o /out/lib/libemu_vulkan_formats.so \
+         /src/emu_vulkan_formats.c -lpthread
 
 # -------------------------------------------------------------- media ---
 # The reference streams of the media-decode workload, and what the STB

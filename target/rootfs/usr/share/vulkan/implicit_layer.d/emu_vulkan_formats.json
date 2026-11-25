@@ -1,0 +1,17 @@
+{
+  "file_format_version": "1.1.2",
+  "layer": {
+    "name": "VK_LAYER_EMU_window_formats",
+    "type": "GLOBAL",
+    "library_path": "/opt/emu/lib/libemu_vulkan_formats.so",
+    "api_version": "1.3.0",
+    "implementation_version": "1",
+    "description": "tv-emu: no 16-bit window formats on the virtual GPU, which not every host takes",
+    "functions": {
+      "vkNegotiateLoaderLayerInterfaceVersion": "emu_formats_negotiate"
+    },
+    "disable_environment": {
+      "EMU_VULKAN_ALL_FORMATS": "1"
+    }
+  }
+}

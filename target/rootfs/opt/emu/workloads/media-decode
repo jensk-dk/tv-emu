@@ -302,7 +302,12 @@ def output_arguments(technology, width, height):
     if technology == "gles":
         return gpu + ["--gpu-api=opengl", "--gpu-context=wayland", "--opengl-es=yes"]
     device = vulkan_device()
-    return gpu + ["--gpu-api=vulkan", "--gpu-context=waylandvk"] + (["--vulkan-device=" + device] if device else [])
+    # No queue of its own for uploads: through the virtual GPU (Venus) on a
+    # host with NVIDIA's driver, the first frame sent that way ends the device
+    # (the host's kernel log has "Xid 32" from the renderer, and the player
+    # aborts; seen with QEMU 11.0.0, virglrenderer 1.3.0, driver 595.99).
+    return (gpu + ["--gpu-api=vulkan", "--gpu-context=waylandvk", "--vulkan-async-transfer=no"]
+            + (["--vulkan-device=" + device] if device else []))
 
 
 def renderer_of(technology, display):

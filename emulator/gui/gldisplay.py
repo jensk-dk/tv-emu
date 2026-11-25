@@ -29,9 +29,13 @@ from PySide6.QtOpenGL import QOpenGLShader, QOpenGLShaderProgram
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 EGL_EXTENSIONS, EGL_NONE, EGL_NO_IMAGE = 0x3055, 0x3038, None
+EGL_VENDOR, EGL_VERSION = 0x3053, 0x3054
 EGL_WIDTH, EGL_HEIGHT, EGL_LINUX_DMA_BUF = 0x3057, 0x3056, 0x3270
-EGL_FOURCC, EGL_PLANE0_FD, EGL_PLANE0_OFFSET, EGL_PLANE0_PITCH = 0x3271, 0x3272, 0x3273, 0x3274
-EGL_PLANE0_MODIFIER_LO, EGL_PLANE0_MODIFIER_HI = 0x3443, 0x3444
+EGL_FOURCC = 0x3271
+# For each plane of a buffer: the names of its descriptor, offset, bytes a
+# row, and the two halves of its layout.
+EGL_PLANES = ((0x3272, 0x3273, 0x3274, 0x3443, 0x3444), (0x3275, 0x3276, 0x3277, 0x3445, 0x3446),
+              (0x3278, 0x3279, 0x327A, 0x3447, 0x3448), (0x3440, 0x3441, 0x3442, 0x3449, 0x344A))
 IMPORT_EXTENSION = "EGL_EXT_image_dma_buf_import"
 MODIFIER_EXTENSION = "EGL_EXT_image_dma_buf_import_modifiers"
 NO_MODIFIER = 0x00ffffffffffffff
@@ -117,6 +121,8 @@ class _Libraries:
         self.create_image = extension(b"eglCreateImageKHR", pointer, pointer, pointer, unsigned, pointer, pointer)
         self.destroy_image = extension(b"eglDestroyImageKHR", unsigned, pointer, pointer)
         self.image_to_texture = extension(b"glEGLImageTargetTexture2DOES", None, unsigned, pointer)
+        self.query_layouts = extension(b"eglQueryDmaBufModifiersEXT", unsigned, pointer, integer, integer, pointer,
+                                       pointer, pointer)
 
     def display(self):
         """The EGL display of the context that is current, with its extensions."""
@@ -128,6 +134,35 @@ class _Libraries:
     def context_name(self):
         return " / ".join((self.gl.glGetString(name) or b"?").decode(errors="replace")
                           for name in (GL_VENDOR, GL_RENDERER, GL_VERSION))
+
+    def layouts(self, pixel_format):
+        """The layouts (modifiers) in which the driver takes buffers of a
+        format, as text for a message: each with "(external)" where it takes
+        it only as a texture of the external kind. None where the driver
+        cannot be asked."""
+        display, extensions = self.display()
+        if MODIFIER_EXTENSION not in extensions or not self.query_layouts:
+            return None
+        count = ctypes.c_int(0)
+        if not self.query_layouts(display, pixel_format, 0, None, None, ctypes.byref(count)):
+            return "none (it does not take the format)"
+        found = (ctypes.c_uint64 * max(count.value, 1))()
+        external = (ctypes.c_uint * max(count.value, 1))()
+        if not self.query_layouts(display, pixel_format, count.value, found, external, ctypes.byref(count)):
+            return "none (it does not take the format)"
+        return ", ".join("0x%016x%s" % (found[at], " (external)" if external[at] else "")
+                         for at in range(count.value)) or "none"
+
+    def describe(self):
+        """The context that is current and the session it is in, for a
+        message about what went wrong on a host."""
+        from PySide6.QtGui import QGuiApplication
+        display, extensions = self.display()
+        egl = " ".join((self.egl.eglQueryString(display, name) or b"?").decode(errors="replace")
+                       for name in (EGL_VENDOR, EGL_VERSION))
+        return "%s; EGL %s, %s layouts; Qt's platform %s, session %s" % (
+            self.context_name(), egl, "names" if MODIFIER_EXTENSION in extensions else "does not name",
+            QGuiApplication.platformName() or "?", os.environ.get("XDG_SESSION_TYPE") or "?")
 
     def require_import(self):
         """Raise Refused unless buffers can be taken in the current context."""
@@ -171,6 +206,8 @@ class GLDisplay(Shaped, QOpenGLWidget):
         self.client = None
         self.failure = None             # why the host took no buffer, once it did not
         self.on_failure = lambda text: None
+        self.on_note = lambda text: None     # how the first picture came, said once
+        self._noted, self._noted_pixels = False, False
         self.drawn = 0                  # pictures of the target's that were drawn, for the checks
         self._size = None               # the display's
         self._libraries = None
@@ -197,7 +234,7 @@ class GLDisplay(Shaped, QOpenGLWidget):
 
     def on_buffer(self, buffer):
         if self._waiting is not None:
-            _close(self._waiting["descriptor"])
+            _close(self._waiting)
         self._waiting, self._pixels = buffer, None
         if self._texture is None:
             self.update()               # else with the picture that QEMU announces next
@@ -239,7 +276,7 @@ class GLDisplay(Shaped, QOpenGLWidget):
                 and program.addShaderFromSourceCode(QOpenGLShader.ShaderTypeBit.Fragment, FRAGMENT_SHADER)
                 and program.link()):
             self._fail("the host's OpenGL ES did not take the viewer's shaders (%s): %s"
-                       % (self._libraries.context_name(), program.log().strip()))
+                       % (self._libraries.describe(), program.log().strip()))
             return
         self._program = program
 
@@ -281,12 +318,11 @@ class GLDisplay(Shaped, QOpenGLWidget):
             display, extensions = libraries.display()
 
             def image(with_modifier):
-                attributes = [EGL_WIDTH, buffer["width"], EGL_HEIGHT, buffer["height"],
-                              EGL_FOURCC, buffer["format"], EGL_PLANE0_FD, buffer["descriptor"],
-                              EGL_PLANE0_OFFSET, 0, EGL_PLANE0_PITCH, buffer["stride"]]
-                if with_modifier:
-                    attributes += [EGL_PLANE0_MODIFIER_LO, buffer["modifier"] & 0xffffffff,
-                                   EGL_PLANE0_MODIFIER_HI, buffer["modifier"] >> 32]
+                attributes = [EGL_WIDTH, buffer["width"], EGL_HEIGHT, buffer["height"], EGL_FOURCC, buffer["format"]]
+                for names, (descriptor, offset, stride) in zip(EGL_PLANES, buffer["planes"]):
+                    attributes += [names[0], descriptor, names[1], offset, names[2], stride]
+                    if with_modifier:
+                        attributes += [names[3], buffer["modifier"] & 0xffffffff, names[4], buffer["modifier"] >> 32]
                 attributes.append(EGL_NONE)
                 values = (ctypes.c_int32 * len(attributes))(*[ctypes.c_int32(value & 0xffffffff).value
                                                              for value in attributes])
@@ -294,17 +330,32 @@ class GLDisplay(Shaped, QOpenGLWidget):
 
             named = buffer["modifier"] != NO_MODIFIER and MODIFIER_EXTENSION in extensions
             found = image(True) if named else None
+            first_error = None if found is not None or not named else libraries.egl.eglGetError()
+            how = "with its layout named"
             if found is None:
                 # Also the second try for a driver that names a layout and then wants none named.
                 found = image(False)
+                how = "with no layout named" + ("" if first_error is None
+                                                else " (EGL error 0x%04x with it named)" % first_error)
+            what = "format %s, layout 0x%016x, %dx%d, %s, %d bytes a row, %s row first" % (
+                buffer["format"].to_bytes(4, "little").decode("ascii", "replace"), buffer["modifier"],
+                buffer["width"], buffer["height"],
+                "one plane" if len(buffer["planes"]) == 1 else "%d planes" % len(buffer["planes"]),
+                buffer["stride"], "top" if buffer["top_first"] else "bottom")
+            what += ", sent with %s" % buffer.get("message", "ScanoutDMABUF")
             if found is None:
                 raise Refused("the host's graphics driver did not take the target's picture as a GPU buffer "
-                              "(EGL error 0x%04x for format %s, layout 0x%016x, %dx%d; %s)" % (
+                              "(EGL error 0x%04x%s for %s; layouts the driver takes for the format: %s; %s)" % (
                                   libraries.egl.eglGetError(),
-                                  buffer["format"].to_bytes(4, "little").decode("ascii", "replace"),
-                                  buffer["modifier"], buffer["width"], buffer["height"], libraries.context_name()))
+                                  "" if first_error is None else ", and 0x%04x with the layout named" % first_error,
+                                  what, libraries.layouts(buffer["format"]) or "not said",
+                                  libraries.describe()))
+            if not self._noted:
+                self._noted = True
+                self.on_note("the target's display comes as a GPU buffer (%s), taken %s; %s"
+                             % (what, how, libraries.describe()))
         finally:
-            _close(buffer["descriptor"])
+            _close(buffer)
         while libraries.gl.glGetError():
             pass
         texture = self._new_texture()
@@ -313,7 +364,8 @@ class GLDisplay(Shaped, QOpenGLWidget):
         if error:
             self._drop((texture, found))
             raise Refused("the host's OpenGL ES did not make a texture of the target's picture "
-                          "(error 0x%04x; %s)" % (error, libraries.context_name()))
+                          "(error 0x%04x for %s; layouts the driver takes for the format: %s; %s)"
+                          % (error, what, libraries.layouts(buffer["format"]) or "not said", libraries.describe()))
         old, self._texture = self._texture, (texture, found, buffer["width"], buffer["height"],
                                              buffer["top_first"], False)
         self._drop(old)
@@ -341,13 +393,18 @@ class GLDisplay(Shaped, QOpenGLWidget):
         pixels, self._pixels = self._pixels, None
         if self._program is None:
             if waiting is not None:
-                _close(waiting["descriptor"])
+                _close(waiting)
             return
         try:
             if waiting is not None:
                 self._import(waiting)
             elif pixels is not None:
                 self._upload(*pixels)
+                if not self._noted and not self._noted_pixels:
+                    self._noted_pixels = True
+                    self.on_note("the target's display comes as pixels so far (%dx%d), not as a GPU buffer: "
+                                 "the target does not draw with the GPU yet, or QEMU could not hand its buffer "
+                                 "over; %s" % (pixels[0], pixels[1], self._libraries.describe()))
         except Refused as error:
             self._fail(str(error))
 
@@ -424,11 +481,13 @@ class GLDisplay(Shaped, QOpenGLWidget):
         return (image if top_first else image.mirrored(False, True)).convertToFormat(QImage.Format.Format_RGB32)
 
 
-def _close(descriptor):
-    try:
-        os.close(descriptor)
-    except OSError:
-        pass
+def _close(buffer):
+    """Close the descriptors that came with a buffer."""
+    for descriptor in buffer["descriptors"]:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
 
 
 def probe():
@@ -448,9 +507,12 @@ def probe():
         name = libraries.context_name()
         if not context.isOpenGLES() or context.format().majorVersion() < 3:
             raise Refused("Qt's OpenGL context is not an OpenGL ES 3 one (%s)" % name)
-        return {"available": True, "reason": "Qt's OpenGL ES context takes GPU buffers (%s)" % name}
+        return {"available": True, "reason": "Qt's OpenGL ES context takes GPU buffers (%s)" % libraries.describe(),
+                "layouts": {code: libraries.layouts(int.from_bytes(code.encode(), "little"))
+                            for code in ("AB24", "XB24", "AR24", "XR24")}}
     except Refused as error:
-        return {"available": False, "reason": str(error)}
+        return {"available": False, "reason": "%s; Qt's platform %s, session %s" % (
+            error, application.platformName() or "?", os.environ.get("XDG_SESSION_TYPE") or "?")}
     finally:
         context.doneCurrent()
         del application
