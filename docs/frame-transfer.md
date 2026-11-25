@@ -4,7 +4,11 @@ How a picture of a VM's display gets from QEMU into the launcher's window on
 the three hosts, what each way costs, what limits the rate today, and what the
 best way is for each host. Written on 2026-11-24 from measurements on the
 Linux host (with its own QEMU 8.2.2 and with a QEMU 11.0.0 built for this)
-and from QEMU's source; nothing was run on macOS or Windows for it. The
+and from QEMU's source; nothing was run on Windows for it. The macOS part was
+first written from the source alone and then run on the Mac the same day:
+"Measured on the Mac" below has what came of it, and where it differs from
+what was read, that section is the one to go by.
+The
 Linux way for host graphics was built the same day
 ("Built: the GPU's buffer in the launcher's window" below).
 What was measured and what was only read is said for each statement, and
@@ -20,7 +24,7 @@ compositor's output ([target/src/emuscreen.c](../target/src/emuscreen.c)).
 | Linux | emulated (the target's CPU draws) | D-Bus, pixels over a socket: 60 a second | none at 1080p | keep; shared memory later | shared memory needs QEMU 9.2 (seen working with 11.0.0) |
 | Linux | host GPU (virgl) | D-Bus with the GPU's buffer (no copy): 30 a second with QEMU 8.2.2, 60 with QEMU 11.0.0; VNC, where the host does not take the buffers: 22 | QEMU 8.2 answers the GPU's fences every 10 ms | as it is, with QEMU 11 | 60 needs QEMU 11 with virglrenderer 1.1.2 or later, which Ubuntu 24.04 does not have: a build of both (`EMU_QEMU_DIR`) |
 | macOS | emulated | D-Bus, pixels over a socket: 60 a second | none at 1080p | keep | nothing |
-| macOS | host GPU (experimental QEMU) | QEMU's own window only | no way into the launcher's window | D-Bus with a read-back in QEMU (one copy off the GPU) | a patch to the experimental QEMU |
+| macOS | host GPU (experimental QEMU) | D-Bus with a read-back in QEMU: 60 a second (measured on 2026-11-24 with this project's change to that QEMU; before it, QEMU's own window only, at 25) | none at 1080p | keep | the experimental QEMU built with the change (`./setup.sh --experimental-qemu`) |
 | Windows | emulated | VNC | VNC's 30 ms look | D-Bus, shared memory | to be tried: whether the QEMU build has the D-Bus display |
 | Windows | host GPU | QEMU's own window only | the display without a window stays black | D-Bus with the shared Direct3D texture (no copy), else read-back into shared memory | the same, and a viewer change |
 
@@ -282,9 +286,103 @@ Also seen:
   its exit status, which avoids it. An RDK-E target that is shut down from
   inside, and not by closing the window, still ends QEMU that way.
 
+## Measured on the Mac
+
+Host: `macos-arm64@apple-m6`, the experimental QEMU 11.1.90 (commit
+`c95b8c49`, with virglrenderer 1.3.0 and ANGLE on Metal), on 2026-11-24.
+Target: the RDK-E image for ARM64, host-native, 1920x1080, with the VM's
+6 CPUs. The numbers of pictures are of the launcher's own window, which drew
+them (`./emu verify rdke-rate rdke-rate-host`), not of a listener that only
+counts.
+
+### Why QEMU's own window showed 25 pictures a second
+
+With `--graphics host` in QEMU's Cocoa window the target handed over 25.1
+and 26.3 pictures a second at its home screen (`-trace
+virtio_gpu_cmd_res_flush`), with its CPUs 98 % idle. The gaps between the
+pictures were 33 and 50 ms, two and three refreshes. (On 2026-11-22 and 23
+the same build gave 2 to 22; what was different then is not known.)
+
+The cause is the one found on Linux, for another reason. A fence was answered
+after 11.3 ms in the median (90 %: 12.6 ms), and a picture has four fenced
+commands. This QEMU has the fence answer without a timer, and virglrenderer
+1.3.0 has its side of it, but virglrenderer needs `eventfd` for the thread
+that watches the fences, and macOS has none: it answers a fence only when
+QEMU asks, and QEMU asks from its timer of 10 ms (a sample of QEMU's threads
+shows `virtio_gpu_fence_poll` calling `virgl_renderer_poll`, and the answers
+coming from there). With the timer at 1 ms on macOS a fence is answered after
+1.37 ms (90 %: 1.51 ms) and the target hands over 59.9 pictures a second.
+
+### The D-Bus display with OpenGL, before any change
+
+`-display dbus,p2p=yes,gl=es` starts, and ends with a segmentation fault at
+its first refresh: `glFlush` in `dbus_gl_refresh`, with no OpenGL context on
+that thread. With that passed, it ends the same way when the target's driver
+starts the host renderer (`EGL_MakeCurrent`, from `virgl_renderer_init`).
+Both are one fault, and it is `egl-headless`'s too: on macOS QEMU's main loop
+runs on another thread than the one that sets the display up, and ANGLE wants
+EGL used from the thread that initialized it. QEMU's Cocoa display knows
+that and initializes EGL at the first request for a context
+(`cocoa_gl_lazy_init`); the D-Bus display and `egl-headless` do it when QEMU
+starts.
+
+### This project's change to the experimental QEMU
+
+In `docs/macos-experimental-qemu.patch`, as a patch that the tap's formula
+applies to QEMU; 262 lines in five files, all of it for macOS only:
+
+- the D-Bus display initializes EGL at the first request for a context, on
+  the main loop's thread, as the Cocoa display does, with a surface of one
+  pixel for its contexts;
+- a scanout that the GPU drew is read back into the surface's memory in the
+  display's own context (which shares the textures of virglrenderer's) and
+  sent as pixels with `Scanout`, the method every listener has; a picture
+  that comes bottom row first is turned;
+- a surface that the target draws in memory is sent from that memory, without
+  a texture;
+- fences are asked about every millisecond while any is open;
+- a trace point, `dbus_gl_read_back`, by which the launcher and `setup.sh`
+  know a QEMU that has the change.
+
+The launcher's viewer needed no change. The launcher takes this way where
+QEMU has the change and its own window shows the display
+(`emulator/graphics.py`, `dbus_read_back` and `window_endpoint`).
+
+### With the change
+
+| | Emulated graphics | Host graphics |
+|---|---|---|
+| Window, home screen | 60.0 a second | 60.0 a second |
+| Window, 1280x720 stream in the browser, shown at 1920x1080 | 55.8 (59.4 in a second run) | 60.1 (60.0) |
+| The VM's CPUs idle, home screen | 68 % | 97 % |
+| The VM's CPUs idle, during the stream | 47 % (51 %) | 83 % |
+| QEMU's share of a host CPU, home screen | (not taken) | 34 to 43 % |
+
+The picture in the window is the right one (the home screen, and the
+stream's corner and marker blocks, which the check looks for). RDK's player
+(AAMP) and the browser's own player both play the reference stream with host
+graphics, with picture and sound; AAMP's frames go through Westeros' video
+sink, which needs the renderer's change of the same day for virgl
+(`rdke/README.md`).
+
+The QEMU measured on 2026-11-24 was built from the same source and the
+same change in a scratch directory, with the formula's options. On
+2026-11-25 `./setup.sh --experimental-qemu` built it through Homebrew and
+installed it (the script found the earlier build as outdated, put the
+change into the tap and built again), and with the installed QEMU
+`rdke-rate-host` gave 60.1 pictures a second at the home screen and 60.1
+during video. Not measured: 3840x2160, a stream of 60 frames a second,
+the time of the read-back by itself, and the Debian target with this way
+(its workloads get host graphics in the launcher's window by the same rule
+now; no check of them was run with this QEMU).
+
 ## Read in the source, not run
 
 ### macOS: the experimental QEMU (11.1.90, commit `c95b8c49`)
+
+What follows was read before anything was run on the Mac. It held, with one
+addition: the fence answer without the timer is in the source and in the
+build, and is of no use on macOS (above).
 
 - The D-Bus display starts with OpenGL through ANGLE: `egl_init` in
   `ui/egl-helpers.c` has a macOS branch that its comment gives to "every EGL
@@ -371,21 +469,19 @@ Also seen:
 ### macOS
 
 1. **Emulated graphics: as it is.**
-2. **Host graphics: a read-back in the experimental QEMU.** A patch of some
-   20 to 30 lines gives the D-Bus display on macOS the body it has on
-   Windows; the launcher starts that QEMU with `-display dbus,p2p=yes,gl=es`
-   and the viewer needs no change. One copy off the GPU and the socket, about
-   2 ms of the Linux host's times; an Apple CPU and GPU share their memory.
-   First to try, without any patch: whether `-display dbus,p2p=yes,gl=es`
-   starts at all, or ends as `egl-headless` does.
+2. **Host graphics: a read-back in the experimental QEMU.** Done on
+   2026-11-24 ("Measured on the Mac"): the window gets 60 pictures a second.
+   It took 262 lines and not the 20 to 30 guessed here, since the display
+   also had to initialize EGL on the right thread and the fences had to be
+   answered faster. `./setup.sh --experimental-qemu` builds the
+   experimental QEMU again with the change; run on 2026-11-25, and the
+   installed build gives the same result.
 3. **No copy at all** would be an IOSurface handed to the viewer: a new
    method in QEMU's interface, a way to pass the surface (a Mach port, which
    D-Bus does not carry, or a global identifier, which Apple has deprecated)
    and a native layer in the viewer. A week or two, against a day or two for
    point 2, and only worth it if the read-back turns out to be what limits
-   the rate. On 2026-11-22 and 2026-11-23 the same build showed 2 to 22
-   pictures a second in QEMU's own window, for a reason not found
-   (`rdke/README.md`); that comes first.
+   the rate. At 1920x1080 it does not: the window gets every picture.
 
 ### Windows
 
@@ -423,8 +519,10 @@ and QEMU chooses by that.
 - **Other drivers.** Only the NVIDIA driver 595 on X11 was tried. Mesa's
   drivers (Intel, AMD), a Wayland session and a screen with a scale factor
   were not.
-- **Anything on macOS or Windows.** All of it is read from the source and
-  from the launcher's earlier notes.
+- **Anything on Windows.** All of it is read from the source and from the
+  launcher's earlier notes.
+- **On macOS:** everything listed as not measured under "Measured on the
+  Mac".
 - **3840x2160.** The copy times are for 1920x1080.
 
 ## How the measurements were made

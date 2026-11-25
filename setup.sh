@@ -91,12 +91,19 @@ fi
 # The experimental QEMU for macOS (--experimental-qemu) comes from a
 # third-party Homebrew tap. It is built from the tap at one commit, with this
 # project's changes to the tap's formulas: those pin the commit of each source
-# and let the build find Xcode.
+# and let the build find Xcode, and QEMU's formula carries this project's
+# change to QEMU itself: a display that the host's GPU draws reaches the
+# launcher's window (docs/frame-transfer.md).
 EXP_TAP=milesbuckton/qemu-virgl
 EXP_TAP_COMMIT=56626e28d85569703532bc0794027b9e3205cbd9
 EXP_QEMU_COMMIT=c95b8c49          # the start of QEMU's commit, which its --version shows
 EXP_FORMULAE="gn libangle libepoxy-angle virglrenderer qemu-virgl"      # in build order
 EXP_PATCH="$(cd "$(dirname "$0")" && pwd)/docs/macos-experimental-qemu.patch"
+# This project's changes to the tap as they were before QEMU's formula got the
+# change to QEMU (git patch-id): a tap that has those is brought to the new ones.
+EXP_PATCH_BEFORE=c8f38555f975708be72eb2d0b2bac26ec3c8f832
+# What a QEMU with that change names among its trace points.
+EXP_QEMU_MARK=dbus_gl_read_back
 if [ "$EXPERIMENTAL_QEMU" = 1 ] && ! { [ "$OS" = Darwin ] && [ "$ARCH" = arm64 ]; }; then
   echo "setup.sh: --experimental-qemu is for macOS on ARM64; on Linux, host graphics comes with the distribution's QEMU" >&2
   exit 2
@@ -497,6 +504,11 @@ experimental_qemu() {
   [ -x "$bin" ] && printf '%s' "$bin"
 }
 
+# Whether that build has this project's change to QEMU.
+experimental_qemu_current() {      # the emulator
+  "$1" -trace help 2>/dev/null | grep -q "^$EXP_QEMU_MARK\$"
+}
+
 # Reported wherever it is installed; asked for only with --experimental-qemu.
 check_experimental_qemu() {
   [ "$OS" = Darwin ] && [ "$ARCH" = arm64 ] || return 0
@@ -505,7 +517,13 @@ check_experimental_qemu() {
     version=$("$bin" --version 2>/dev/null | head -1)
     case "$version" in
       *"-g$EXP_QEMU_COMMIT"*)
-        ok "experimental QEMU with host graphics for VM mode: ${version#QEMU emulator version }; the launcher uses it when EMU_QEMU_DIR=$(dirname "$bin")" ;;
+        if experimental_qemu_current "$bin"; then
+          ok "experimental QEMU with host graphics for VM mode: ${version#QEMU emulator version }; the launcher uses it when EMU_QEMU_DIR=$(dirname "$bin")"
+        elif [ "$EXPERIMENTAL_QEMU" = 1 ]; then
+          optional experimental-qemu "experimental QEMU: the build in $(dirname "$bin") is from before this project's change to it, with which the launcher's window shows host graphics; it is built again"
+        else
+          note "experimental QEMU: the build in $(dirname "$bin") is from before this project's change to it, with which the launcher's window shows host graphics (./setup.sh --experimental-qemu builds it again)"
+        fi ;;
       *)
         note "experimental QEMU: the build in $(dirname "$bin") is not the one this project pinned (${version:-it does not run})" ;;
     esac
@@ -867,6 +885,10 @@ install_experimental_qemu() (
   changes=$(git -C "$tap_dir" diff --no-ext-diff --src-prefix=a/ --dst-prefix=b/ HEAD | patch_id)
   if [ "$head" = "$EXP_TAP_COMMIT" ] && [ "$changes" = "$(patch_id < "$EXP_PATCH")" ]; then
     info "  The tap in $tap_dir has this project's changes already."
+  elif [ "$head" = "$EXP_TAP_COMMIT" ] && [ "$changes" = "$EXP_PATCH_BEFORE" ]; then
+    info "  The tap in $tap_dir has this project's earlier changes; they are replaced."
+    run git -C "$tap_dir" checkout --quiet -- Formula || return 1
+    run git -C "$tap_dir" apply "$EXP_PATCH" || return 1
   elif [ -n "$(git -C "$tap_dir" status --porcelain)" ]; then
     info "  The tap in $tap_dir has local changes that are not this project's."
     info "  They are left alone; undo them or remove the tap, then run this again."
@@ -896,6 +918,18 @@ install_experimental_qemu() (
       return 1
     fi
   done
+  # A QEMU of this tap from before this project's change to it is built again.
+  if bin=$(experimental_qemu) && ! experimental_qemu_current "$bin"; then
+    case " $to_build " in
+      *" qemu-virgl "*) ;;
+      *)
+        info "  The experimental QEMU is built again, with this project's change to it."
+        run brew unpin qemu-virgl 2>/dev/null
+        run brew reinstall --build-from-source "$EXP_TAP/qemu-virgl" || return 1
+        run brew pin qemu-virgl || info "  Could not pin qemu-virgl; brew upgrade may rebuild it from newer sources."
+        ;;
+    esac
+  fi
   for formula in $to_build; do
     before=$(brew_formulae) || { info "  Homebrew does not list its packages."; return 1; }
     # A clone from an earlier run may lack the commit; a new one is made by
@@ -913,7 +947,8 @@ install_experimental_qemu() (
     # Keep a later `brew upgrade` from building it again from other commits.
     run brew pin "$formula" || info "  Could not pin $formula; brew upgrade may rebuild it from newer sources."
   done
-  experimental_qemu >/dev/null || { info "  The build ended without a QEMU in $prefix/opt/qemu-virgl."; return 1; }
+  bin=$(experimental_qemu) || { info "  The build ended without a QEMU in $prefix/opt/qemu-virgl."; return 1; }
+  experimental_qemu_current "$bin" || { info "  The QEMU in $prefix/opt/qemu-virgl is without this project's change to it."; return 1; }
 )
 
 # Whether the user is in a group, as the group database has it (a session

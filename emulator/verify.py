@@ -2872,7 +2872,7 @@ def _rdke_thunder_reached(asked, seen, slow):
     return False
 
 
-def _rdke_session(body, options=None, on_audio=None):
+def _rdke_session(body, options=None, on_audio=None, graphics=None):
     """Starts the RDK-E image of this host with the launcher's window, waits
     for its shell, and has `body(viewer, typed, answer, seen, console, lock,
     slow)` do a check's work in it: `typed` types a line on the console,
@@ -2951,7 +2951,15 @@ def _rdke_session(body, options=None, on_audio=None):
         threading.Thread(target=guarded, daemon=True).start()
 
     with os.fdopen(reader, "rb", buffering=0) as source:
+        if graphics == "host":
+            # Asked of the QEMU this run would use, before anything is started.
+            binary = host.find_tool(vm.QEMU_BINARY[guest])
+            found = graphics_probe(binary)
+            if not found["available"]:
+                raise CheckUnavailable("this host's QEMU (%s) does not show the launcher's window a display that "
+                                       "the host's GPU draws: %s" % (binary, found["reason"]))
         outcome = launch(RunOptions(mode="vm", arch=arch, rootfs=rootfs.RDKE, window=True, echo=False,
+                                    graphics=graphics,
                                     stdin_script=source, on_line=on_line, on_viewer=drive, on_audio=on_audio,
                                     options=dict(options or {"audio-output": "none"},
                                                  **{"verbose-boot": "no", vm.FORWARD_OPTION: forward}),
@@ -3106,7 +3114,7 @@ RDKE_VIDEO_MARKER = (0, 200, 255)
 RDKE_VIDEO_TONE = 880
 
 
-def _rdke_stream_check(page, there, missing, address, played, moves):
+def _rdke_stream_check(page, there, missing, address, played, moves, drawn_by=None):
     """A page of the RDK-E image that plays the reference stream, as a person
     at the launcher's window has it: the picture reaches the window and the
     sound reaches the host. `page` is the page's address and `there` its
@@ -3208,7 +3216,7 @@ def _rdke_stream_check(page, there, missing, address, played, moves):
         seen["cpu"] = asked("cpu", "top -b -n 1 | awk '$NF ~ /WPE/ {s += $9} END {printf \"%d\", s}'")
 
     try:
-        seen, kind, said_image = _rdke_session(body, options=sink.options(), on_audio=sink.watch)
+        seen, kind, said_image = _rdke_session(body, options=sink.options(), on_audio=sink.watch, graphics=drawn_by)
     finally:
         heard = sink.close()
     outcome = seen["outcome"]
@@ -3228,8 +3236,12 @@ def _rdke_stream_check(page, there, missing, address, played, moves):
     lines = ["the RDK-E image (%s) started in a %s guest, and %s: its player reports it playing at %s, with "
              "its time moving" % (said_image, kind, played, RDKE_VIDEO_SIZE),
              "the launcher's window got the stream's picture, full screen at %dx%d: its four corner blocks and its "
-             "marker block have the stream's colours; decoding and drawing are done on the target's CPU, with the "
-             "browser's processes at %s%% of one CPU" % (tuple(seen["size"]) + (seen.get("cpu") or "?",)),
+             "marker block have the stream's colours; %s, with the "
+             "browser's processes at %s%% of one CPU"
+             % (tuple(seen["size"]) + ("decoding is done on the target's CPU and drawing on the host's GPU"
+                                       if drawn_by == "host" else
+                                       "decoding and drawing are done on the target's CPU",
+                                       seen.get("cpu") or "?")),
              "the stream's %d Hz tone reached the host-side process in %d tenths of a second; path: target sound "
              "card (%s) -> %s" % (RDKE_VIDEO_TONE, _tone_windows(received, RDKE_VIDEO_TONE), seen["card"],
                                   audio.get("path"))]
@@ -3395,7 +3407,12 @@ def check_rdke_device():
         call("serial", "org.rdk.System.1.getSerialNumber")
         call("make", "DeviceInfo.1.make")
         call("model", "DeviceInfo.1.modelid")
-        call("power", "org.rdk.System.1.getPowerState")
+        # The power manager starts in standby and is switched on during the start-up; seen once as STANDBY
+        # right after the display settings service answered (2026-11-25).
+        asked_at = time.monotonic()
+        _wait(lambda: call("power", "org.rdk.System.1.getPowerState") or
+              (seen["power"] or {}).get("powerState") == "ON", 60 * slow, 2)
+        seen["power-waited"] = time.monotonic() - asked_at
         call("lights", "org.rdk.FrontPanel.1.getFrontPanelLights")
 
     seen, kind, said = _rdke_session(body)
@@ -3433,10 +3450,12 @@ def check_rdke_device():
             % (said, kind, now.get("w"), now.get("h"), now.get("resolution"), seen.get("mode"), len(offered),
                ", ".join(map(str, offered)), ", ".join(map(str, television))),
             "the display's description (EDID, %d bytes) is the virtual device's, \"%s\"; the serial number is the "
-            "virtual device's (%s), the maker \"%s\" and the model \"%s\"; the power state is ON and the front "
+            "virtual device's (%s), the maker \"%s\" and the model \"%s\"; the power state is ON%s and the front "
             "panel has its power light"
             % (len(edid), RDKE_DISPLAY_NAME.decode(), seen["serial-file"], got("make").get("make"),
-               got("model").get("sku"))]
+               got("model").get("sku"),
+               " (%.0f s after it was first asked for)" % seen["power-waited"] if seen.get("power-waited", 0) >= 2
+               else "")]
 
 
 # Pictures a second that reach the launcher's window from a host-native RDK-E guest, at the least.
@@ -3445,11 +3464,27 @@ RDKE_RATE_FLOOR = 50
 RDKE_RATE_SECONDS = 10
 
 
+def graphics_probe(binary):
+    """Whether this QEMU gives the launcher's own window a display that the
+    host's GPU draws."""
+    return graphics.probe_vm(binary, launcher_window=True)
+
+
 def check_rdke_rate():
     """How many pictures a second reach the launcher's window from an RDK-E
     image: at its user interface's home screen, and while its browser plays
     the reference stream. The image's compositor shows a picture each
     refresh of its 60 Hz mode, and the window is to get them."""
+    return _rdke_rate(None)
+
+
+def check_rdke_rate_host():
+    """The same with the host's GPU drawing for the target (--graphics host),
+    which an RDK-E target gets only when a run asks for it."""
+    return _rdke_rate("host")
+
+
+def _rdke_rate(asked_graphics):
     def body(viewer, typed, answer, seen, console, lock, slow):
         asked = _rdke_asker(typed, answer, console, lock)
         if not _rdke_ui_ready(asked, seen, slow):
@@ -3467,7 +3502,14 @@ def check_rdke_rate():
         time.sleep(10 * slow)
         seen["cpus"] = asked("cpus", "nproc")
         seen["mode"] = asked("mode", "cat /sys/class/drm/card0-*/modes | head -n 1", r"\w+")
+        seen["virgl"] = asked("virgl", "dmesg | grep -c 'features: +virgl'")
+
+        def idle():
+            """How much of the VM's CPUs is idle, in percent, over three seconds."""
+            return asked("idle", "top -b -n 2 -d 3 | grep '^%Cpu' | tail -n 1 | sed 's/.*, *\\([0-9]*\\)[.0-9]* id.*/\\1/'",
+                         seconds=40)
         seen["home"] = rate()
+        seen["home-idle"] = idle()
         started = asked("launch", "S org.rdk.RDKShell.1.launch '{\"callsign\":\"HtmlApp\",\"type\":\"HtmlApp\","
                         "\"uri\":\"%s?muted\"}' | grep -c '\"success\":true'" % RDKE_VIDEO_PAGE, seconds=180)
         if started != "1":
@@ -3480,20 +3522,40 @@ def check_rdke_rate():
             return
         time.sleep(3 * slow)
         seen["video"] = rate()
+        seen["video-idle"] = idle()
+        with tempfile.TemporaryDirectory(prefix="emu-verify-") as directory:
+            # The stream's picture, as rdke-video looks for it: its corner and marker blocks.
+            path = os.path.join(directory, "display.ppm")
+            seen["picture"] = ["the window gave no picture of the display"]
+            if viewer.ask(do="save-display", path=path).get("saved"):
+                size = imagefile.size(path)
+                entry = {"file": path, "captured_width": size[0], "captured_height": size[1],
+                         "marker": RDKE_VIDEO_MARKER}
+                seen["picture"] = graphics.capture_problems(entry, size[0], size[1],
+                                                            tolerance=graphics.VIDEO_COLOR_TOLERANCE)
 
-    seen, kind, said = _rdke_session(body)
+    seen, kind, said = _rdke_session(body, graphics=asked_graphics)
     home, video = seen.get("home"), seen.get("video")
     _require(home is not None and video is not None, "the launcher's window did not say how many pictures it got: %r"
              % seen)
-    line = ("the RDK-E image (%s) started in a %s guest with %s CPUs and the display mode %s, and the launcher's "
-            "window got %.1f pictures a second at the user interface's home screen and %.1f while the browser "
-            "played the reference stream (each counted over %d s)"
-            % (said, kind, seen.get("cpus") or "?", seen.get("mode") or "?", home, video, RDKE_RATE_SECONDS))
+    drawn = seen["outcome"].environment["emulator"].get("graphics") or {}
+    _require(asked_graphics != "host" or (drawn.get("provider") == "host" and seen.get("virgl") == "1"),
+             "the host's GPU was asked for and the target does not draw with it: the launcher chose %r, and the "
+             "target's kernel %s virgl" % (drawn.get("provider"), "reports" if seen.get("virgl") == "1" else
+                                           "does not report"))
+    line = ("the RDK-E image (%s) started in a %s guest with %s CPUs and the display mode %s, drawn by %s, and the "
+            "launcher's window got %.1f pictures a second at the user interface's home screen and %.1f while the "
+            "browser played the reference stream (each counted over %d s; the VM's CPUs were %s %% and %s %% idle)"
+            % (said, kind, seen.get("cpus") or "?", seen.get("mode") or "?",
+               "the host's GPU (%s)" % drawn.get("device") if drawn.get("provider") == "host" else "the target's CPU",
+               home, video, RDKE_RATE_SECONDS, seen.get("home-idle") or "?", seen.get("video-idle") or "?"))
     if kind != "host-native":
         raise CheckUnavailable(line + "; no number is asked of a guest on a simulated CPU")
     _require(home >= RDKE_RATE_FLOOR and video >= RDKE_RATE_FLOOR, line + ": fewer than %d" % RDKE_RATE_FLOOR)
-    return [line, "both are at least %d, the least asked of a host-native guest whose compositor shows 60"
-            % RDKE_RATE_FLOOR]
+    _require(seen.get("picture") == [], line + "; but the window does not show the stream's picture: %s"
+             % "; ".join(seen.get("picture") or []))
+    return [line, "both are at least %d, the least asked of a host-native guest whose compositor shows 60, and "
+            "the window shows the stream's picture (its corner blocks and its marker block)" % RDKE_RATE_FLOOR]
 
 
 def _command_checks():
@@ -3513,6 +3575,8 @@ def _command_checks():
                                                   "display, identity, power"),
         "rdke-rate": (check_rdke_rate, "9.4", "the launcher's window gets an RDK-E image's pictures at the pace "
                                               "its compositor shows them"),
+        "rdke-rate-host": (check_rdke_rate_host, "9.4", "the same with the host's GPU drawing for the RDK-E "
+                                                        "image (--graphics host)"),
         "doctor": (check_doctor, "9.2", "the launcher shows what it finds on the host, and names what is missing"),
         "report-serve": (check_report_serve, "9.2", "the results command serves the page and all that it reads"),
         "report-page": (check_report_page, "9.2", "the results page shows every record and its sections"),
