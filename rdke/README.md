@@ -1116,6 +1116,20 @@ process):
   these runs. QEMU's display without a window (`egl-headless`) crashes on
   macOS, so a display drawn by the host's GPU has no way into the
   launcher's window there.
+  Found and repaired on 2026-11-24 (`docs/frame-transfer.md`, "Measured on
+  the Mac"): the target handed over 25 pictures a second because QEMU
+  answers the GPU's fences from a timer of 10 ms on macOS, and four of them
+  go into a picture; and QEMU's D-Bus display, which feeds the launcher's
+  window, used OpenGL on a thread that had not initialized it. With this
+  project's change to the experimental QEMU the launcher's window shows the
+  host-drawn display at 60.0 pictures a second at the home screen and 60.1
+  during video, with the VM's 6 CPUs 97 % and 83 % idle (emulated graphics
+  in the same runs: 60.0 and 55.8, 68 % and 47 % idle), and AAMP and the
+  browser's own player play the reference stream with picture and sound.
+  `./emu verify rdke-rate-host` checks the rate and the picture. Emulated
+  graphics stays what an RDK-E target gets unasked; `--graphics host` asks
+  for the host's GPU. The ARM64 image was built again that day with the
+  renderer's change for virgl, which AAMP's frames need there.
 - *RDK's HDMI-CEC reader kept one of the VM's CPUs busy; repaired.* The VM
   has no CEC adapter, so the driver cannot be opened, and the library's
   reader thread (`Bus::Reader::run`) then asked the unopened driver for a

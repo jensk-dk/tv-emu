@@ -723,16 +723,19 @@ directory. The option then:
 1. tells Homebrew to trust the tap, and taps it;
 2. takes the tap at the commit below and applies
    [docs/macos-experimental-qemu.patch](docs/macos-experimental-qemu.patch) to
-   its formulas. The patch pins the commit each formula builds from, and lets
+   its formulas. The patch pins the commit each formula builds from, lets
    ANGLE's build find Xcode where `xcode-select` points at the Command Line
-   Tools;
+   Tools, and has QEMU's formula apply this project's change to QEMU: with
+   it a display that the host's GPU draws reaches the launcher's own window
+   ([docs/frame-transfer.md](docs/frame-transfer.md), "Measured on the Mac");
 3. builds the formulas from source, in dependency order (`gn`, `libangle`,
    `libepoxy-angle`, `virglrenderer`, `qemu-virgl`);
 4. pins the five packages, so that `brew upgrade` does not build them again
    from other commits.
 
-`./setup.sh --check` reports the build wherever it is installed. The commits
-it is built from:
+`./setup.sh --check` reports the build wherever it is installed, and says so
+when it is one from before the change to QEMU; the option then builds QEMU
+again (the other four parts stay). The commits it is built from:
 
 | Part | Source | Commit |
 |---|---|---|
@@ -781,6 +784,16 @@ this one, then runs ARM32 targets as well.
 
 What was seen, in single runs that were not recorded as results:
 
+- Since 2026-11-24, with this project's change to that QEMU: the launcher's
+  own window shows a display that the Apple GPU draws, with its toolbar and
+  remote control keys, at 60 pictures a second for the RDK-E image
+  (`./emu verify rdke-rate-host`: 60.0 at its home screen and 60.1 during
+  video, with the VM's CPUs 97 % and 83 % idle). `--graphics host --window`
+  asks for it. Before the change QEMU's own window was the only one, at 25.
+  First run with a QEMU built from the same source and change in a
+  scratch directory. On 2026-11-25 `./setup.sh --experimental-qemu` built
+  and installed it through Homebrew, and with that build the check gave
+  60.1 and 60.1.
 - With `--window`, OpenGL ES and Flutter render on the Apple GPU (the target
   reports `virgl (ANGLE (Apple, Apple M6, OpenGL 4.1 Metal))`), for
   host-native, simulated ARM64 and simulated ARM32 targets. QEMU ends cleanly.

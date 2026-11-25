@@ -58,7 +58,7 @@ index cedf9b6..4202176 100644
    license "MIT"
  
 diff --git a/Formula/qemu-virgl.rb b/Formula/qemu-virgl.rb
-index 12c1b95..af310a9 100644
+index 12c1b95..6c9f368 100644
 --- a/Formula/qemu-virgl.rb
 +++ b/Formula/qemu-virgl.rb
 @@ -13,7 +13,7 @@ class QemuVirgl < Formula
@@ -70,6 +70,422 @@ index 12c1b95..af310a9 100644
        using:  NoSubmoduleGitDownloadStrategy
    version "master"
    license "GPL-2.0-only"
+@@ -23,6 +23,13 @@ class QemuVirgl < Formula
+     sha256 arm64_golden_gate: "dd26fcd513d56f71ae9ddc01b8e2424706b6eb2b6eaa64f789efca00e0110cfd"
+   end
+ 
++  # Local change (tv-emu): a display that the host's GPU draws reaches a
++  # listener of the D-Bus display on macOS (read back from the GPU and sent
++  # as pixels), EGL is initialized on the thread that uses it there, and the
++  # guest's fences are answered every millisecond. See docs/frame-transfer.md
++  # in tv-emu. The patch is at the end of this file.
++  patch :DATA
++
+   # keg_only: this tap intentionally replaces the standard `qemu` keg. Without
+   # this line, `brew install` links qemu-system-aarch64/qemu-img/etc. into
+   # $(brew --prefix)/bin for every user who doesn't have core qemu installed —
+@@ -294,3 +301,401 @@ class QemuVirgl < Formula
+     shell_output("#{bin}/qemu-system-aarch64 -accel help")
+   end
+ end
++
++__END__
++diff --git a/hw/display/virtio-gpu-virgl.c b/hw/display/virtio-gpu-virgl.c
++index 8ed900a8cf..070a9456a4 100644
++--- a/hw/display/virtio-gpu-virgl.c
+++++ b/hw/display/virtio-gpu-virgl.c
++@@ -1452,7 +1452,18 @@ static void virtio_gpu_fence_poll(void *opaque)
++     virgl_renderer_poll();
++     virtio_gpu_process_cmdq(g);
++     if (!QTAILQ_EMPTY(&g->cmdq) || !QTAILQ_EMPTY(&g->fenceq)) {
+++#ifdef CONFIG_DARWIN
+++        /*
+++         * virglrenderer has no thread that watches the fences on macOS (it
+++         * needs eventfd for one), so a fence is answered only when it is
+++         * asked about here. A frame of a compositor has several fenced
+++         * commands, and with 10 ms between the questions a guest that shows
+++         * 60 frames a second got 25 through.
+++         */
+++        timer_mod(gl->fence_poll, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 1);
+++#else
++         timer_mod(gl->fence_poll, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 10);
+++#endif
++     }
++ }
++ 
++diff --git a/ui/dbus-listener.c b/ui/dbus-listener.c
++index 26ed84d700..19219764e5 100644
++--- a/ui/dbus-listener.c
+++++ b/ui/dbus-listener.c
++@@ -88,6 +88,12 @@ struct _DBusDisplayListener {
++ #else /* !WIN32 */
++     QemuDBusDisplay1ListenerUnixMap *map_proxy;
++     QemuDBusDisplay1ListenerUnixScanoutDMABUF2 *scanout_dmabuf_v2_proxy;
+++#if defined(CONFIG_DARWIN) && defined(CONFIG_OPENGL)
+++    /* the guest's scanout texture, read back for each update */
+++    egl_fb fb;
+++    bool fb_ready;
+++    bool fb_y0_top;
+++#endif
++ #endif
++ 
++     guint dbus_filter;
++@@ -214,6 +220,85 @@ fail:
++ }
++ #endif /* WIN32 */
++ 
+++#if defined(CONFIG_DARWIN) && defined(CONFIG_OPENGL)
+++/*
+++ * macOS has neither a buffer of the GPU that another process can take
+++ * (dma-buf) nor the shared texture of Windows. A scanout that the GPU drew
+++ * is read back into the surface's memory and sent as pixels, with the
+++ * methods every listener has (Scanout, Update).
+++ *
+++ * The frame buffer object that reads the texture belongs to one context,
+++ * and virglrenderer's own contexts come and go on this thread: the reading
+++ * is done in the display's own context, which shares the textures of all
+++ * of them, and whichever was current is put back afterwards.
+++ *
+++ * dbus_gl_enter() is false where there is no OpenGL.
+++ */
+++typedef struct DBusGLSaved {
+++    EGLContext ctx;
+++    EGLSurface draw;
+++    EGLSurface read;
+++} DBusGLSaved;
+++
+++static bool dbus_gl_enter(DBusGLSaved *saved)
+++{
+++    /* EGL may not be there yet: nothing is asked of it before this */
+++    saved->ctx = qemu_egl_display ? eglGetCurrentContext() : EGL_NO_CONTEXT;
+++    if (saved->ctx != EGL_NO_CONTEXT && saved->ctx == qemu_egl_rn_ctx) {
+++        return true;
+++    }
+++    if (saved->ctx != EGL_NO_CONTEXT) {
+++        saved->draw = eglGetCurrentSurface(EGL_DRAW);
+++        saved->read = eglGetCurrentSurface(EGL_READ);
+++        /* what was drawn in that context is to be in the texture */
+++        glFlush();
+++    }
+++    return dbus_gl_make_current_rn();
+++}
+++
+++static void dbus_gl_leave(const DBusGLSaved *saved)
+++{
+++    if (saved->ctx != EGL_NO_CONTEXT && saved->ctx != qemu_egl_rn_ctx) {
+++        eglMakeCurrent(qemu_egl_display, saved->draw, saved->read, saved->ctx);
+++    }
+++}
+++
+++static void dbus_gl_read_back(DBusDisplayListener *ddl)
+++{
+++    DBusGLSaved saved;
+++    int width = surface_width(ddl->ds);
+++    int height = surface_height(ddl->ds);
+++    int stride = surface_stride(ddl->ds);
+++    uint8_t *data = surface_data(ddl->ds);
+++
+++    if (!dbus_gl_enter(&saved)) {
+++        return;
+++    }
+++    trace_dbus_gl_read_back(width, height, ddl->fb_y0_top);
+++    egl_fb_read(ddl->ds, &ddl->fb);
+++    dbus_gl_leave(&saved);
+++
+++    if (ddl->fb_y0_top) {
+++        /*
+++         * What is read comes with the texture's last row first. Where the
+++         * guest's top row is the texture's first one, that is the bottom
+++         * row first; seen with virglrenderer's scanout, which has it so.
+++         */
+++        g_autofree uint8_t *row = g_malloc(stride);
+++        int y;
+++
+++        for (y = 0; y < height / 2; y++) {
+++            uint8_t *upper = data + (size_t)stride * y;
+++            uint8_t *lower = data + (size_t)stride * (height - 1 - y);
+++
+++            memcpy(row, upper, (size_t)width * 4);
+++            memcpy(upper, lower, (size_t)width * 4);
+++            memcpy(lower, row, (size_t)width * 4);
+++        }
+++    }
+++}
+++#endif
+++
++ #if defined(CONFIG_GBM) || defined(WIN32)
++ static void dbus_update_gl_cb(GObject *source_object,
++                               GAsyncResult *res,
++@@ -254,12 +339,30 @@ static void dbus_update_gl_cb(GObject *source_object,
++ static void dbus_call_update_gl(DisplayChangeListener *dcl,
++                                 int x, int y, int w, int h)
++ {
++-#if defined(CONFIG_GBM) || defined(WIN32)
+++#if defined(CONFIG_GBM) || defined(WIN32) || defined(CONFIG_DARWIN)
++     DBusDisplayListener *ddl = container_of(dcl, DBusDisplayListener, dcl);
++ #endif
++ 
++     trace_dbus_update_gl(x, y, w, h);
++ 
+++#ifdef CONFIG_DARWIN
+++    if (!ddl->ds) {
+++        return;
+++    }
+++    if (ddl->fb_ready &&
+++        ddl->fb.width == surface_width(ddl->ds) &&
+++        ddl->fb.height == surface_height(ddl->ds)) {
+++        /* the whole picture: the guest shows a new buffer each time */
+++        dbus_gl_read_back(ddl);
+++        dbus_gfx_update(dcl, 0, 0,
+++                        surface_width(ddl->ds), surface_height(ddl->ds));
+++    } else {
+++        /* a surface that the guest draws in memory */
+++        dbus_gfx_update(dcl, x, y, w, h);
+++    }
+++    return;
+++#endif
+++
++     glFlush();
++ #ifdef CONFIG_GBM
++     qemu_console_hw_gl_block(ddl->dcl.con, true);
++@@ -650,6 +753,27 @@ static void dbus_scanout_texture(DisplayChangeListener *dcl,
++         egl_fb_setup_for_tex(&ddl->fb, backing_width, backing_height, tex_id, false);
++     }
++ #endif
+++
+++#ifdef CONFIG_DARWIN
+++    {
+++        DBusDisplayListener *ddl = container_of(dcl, DBusDisplayListener, dcl);
+++
+++        ddl->fb_ready = false;
+++        if (tex_id) {
+++            DBusGLSaved saved;
+++
+++            if (dbus_gl_enter(&saved)) {
+++                egl_fb_setup_for_tex(&ddl->fb, backing_width, backing_height,
+++                                     tex_id, false);
+++                dbus_gl_leave(&saved);
+++                ddl->fb_y0_top = backing_y_0_top;
+++                ddl->fb_ready = true;
+++                /* the next picture is sent whole */
+++                ddl->ds_scanout_pending = true;
+++            }
+++        }
+++    }
+++#endif
++ }
++ 
++ #ifdef CONFIG_GBM
++@@ -1003,6 +1127,16 @@ dbus_display_listener_dispose(GObject *object)
++ #endif
++ #else /* !WIN32 */
++     g_clear_object(&ddl->scanout_dmabuf_v2_proxy);
+++#if defined(CONFIG_DARWIN) && defined(CONFIG_OPENGL)
+++    if (ddl->fb.framebuffer) {
+++        DBusGLSaved saved;
+++
+++        if (dbus_gl_enter(&saved)) {
+++            egl_fb_destroy(&ddl->fb);
+++            dbus_gl_leave(&saved);
+++        }
+++    }
+++#endif
++ #endif
++ #ifdef CONFIG_PIXMAN
++     pixman_region32_fini(&ddl->gl_damage);
++diff --git a/ui/dbus.c b/ui/dbus.c
++index f473a66889..a0353cf577 100644
++--- a/ui/dbus.c
+++++ b/ui/dbus.c
++@@ -47,12 +47,83 @@
++ static DBusDisplay *dbus_display;
++ 
++ #ifdef CONFIG_OPENGL
+++#ifdef CONFIG_DARWIN
+++/*
+++ * EGL is initialized at the first request for a context, on the thread that
+++ * makes it, which is the main loop's and the one every later use comes from.
+++ * (ui/cocoa.m does the same, for the same reason.) A failure stays one.
+++ */
+++static DisplayGLMode dbus_pending_gl_mode;
+++static bool dbus_gl_inited;
+++static bool dbus_gl_failed;
+++static EGLSurface dbus_gl_surface = EGL_NO_SURFACE;
+++
+++static bool dbus_gl_lazy_init(void)
+++{
+++    Error *err = NULL;
+++    static const EGLint pb_attrs[] = {
+++        EGL_WIDTH, 1,
+++        EGL_HEIGHT, 1,
+++        EGL_NONE,
+++    };
+++
+++    if (dbus_gl_inited) {
+++        return true;
+++    }
+++    if (dbus_gl_failed) {
+++        return false;
+++    }
+++    if (!egl_init(NULL, dbus_pending_gl_mode, &err)) {
+++        error_report_err(err);
+++        dbus_gl_failed = true;
+++        return false;
+++    }
+++    dbus_gl_surface = eglCreatePbufferSurface(qemu_egl_display,
+++                                              qemu_egl_config, pb_attrs);
+++    if (dbus_gl_surface == EGL_NO_SURFACE ||
+++        !eglMakeCurrent(qemu_egl_display, dbus_gl_surface, dbus_gl_surface,
+++                        qemu_egl_rn_ctx)) {
+++        error_report("dbus: no OpenGL context: %s",
+++                     qemu_egl_get_error_string());
+++        dbus_gl_failed = true;
+++        return false;
+++    }
+++    dbus_gl_inited = true;
+++    return true;
+++}
+++
+++bool dbus_gl_make_current_rn(void)
+++{
+++    return dbus_gl_lazy_init() &&
+++        eglMakeCurrent(qemu_egl_display, dbus_gl_surface, dbus_gl_surface,
+++                       qemu_egl_rn_ctx);
+++}
+++
++ static QEMUGLContext dbus_create_context(DisplayGLCtx *dgc,
++                                          QEMUGLParams *params)
++ {
+++    if (!dbus_gl_lazy_init()) {
+++        return NULL;
+++    }
++     return qemu_egl_create_context(dgc, params, qemu_egl_rn_ctx);
++ }
++ 
+++static int dbus_make_context_current(DisplayGLCtx *dgc, QEMUGLContext ctx)
+++{
+++    if (!dbus_gl_lazy_init()) {
+++        return -1;
+++    }
+++    return eglMakeCurrent(qemu_egl_display, dbus_gl_surface, dbus_gl_surface,
+++                          ctx) ? 0 : -1;
+++}
+++#else
+++static QEMUGLContext dbus_create_context(DisplayGLCtx *dgc,
+++                                         QEMUGLParams *params)
+++{
+++    return qemu_egl_create_context(dgc, params, qemu_egl_rn_ctx);
+++}
+++#endif
+++
++ static bool
++ dbus_is_compatible_dcl(DisplayGLCtx *dgc,
++                        DisplayChangeListener *dcl)
++@@ -62,6 +133,28 @@ dbus_is_compatible_dcl(DisplayGLCtx *dgc,
++         dcl->ops == &dbus_console_dcl_ops;
++ }
++ 
+++#ifdef CONFIG_DARWIN
+++/*
+++ * On macOS a listener is sent pixels (see dbus_call_update_gl): a surface
+++ * that the guest draws in memory is sent from that memory, and needs no
+++ * texture.
+++ */
+++static void
+++dbus_create_texture(DisplayGLCtx *ctx, DisplaySurface *surface)
+++{
+++}
+++
+++static void
+++dbus_destroy_texture(DisplayGLCtx *ctx, DisplaySurface *surface)
+++{
+++}
+++
+++static void
+++dbus_update_texture(DisplayGLCtx *ctx, DisplaySurface *surface,
+++                    int x, int y, int w, int h)
+++{
+++}
+++#else
++ static void
++ dbus_create_texture(DisplayGLCtx *ctx, DisplaySurface *surface)
++ {
++@@ -80,12 +173,17 @@ dbus_update_texture(DisplayGLCtx *ctx, DisplaySurface *surface,
++ {
++     surface_gl_update_texture(ctx->gls, surface, x, y, w, h);
++ }
+++#endif
++ 
++ static const DisplayGLCtxOps dbus_gl_ops = {
++     .dpy_gl_ctx_is_compatible_dcl = dbus_is_compatible_dcl,
++     .dpy_gl_ctx_create       = dbus_create_context,
++     .dpy_gl_ctx_destroy      = qemu_egl_destroy_context,
+++#ifdef CONFIG_DARWIN
+++    .dpy_gl_ctx_make_current = dbus_make_context_current,
+++#else
++     .dpy_gl_ctx_make_current = qemu_egl_make_context_current,
+++#endif
++     .dpy_gl_ctx_create_texture = dbus_create_texture,
++     .dpy_gl_ctx_destroy_texture = dbus_destroy_texture,
++     .dpy_gl_ctx_update_texture = dbus_update_texture,
++@@ -121,9 +219,12 @@ dbus_display_init(Object *o)
++ 
++ #ifdef CONFIG_OPENGL
++     dd->glctx.ops = &dbus_gl_ops;
+++#ifndef CONFIG_DARWIN
+++    /* (macOS: the shader is for the surface textures, which are not made) */
++     if (display_opengl) {
++         dd->glctx.gls = qemu_gl_init_shader();
++     }
+++#endif
++ #endif
++     dd->iface = qemu_dbus_display1_vm_skeleton_new();
++     dd->consoles = g_ptr_array_new_with_free_func(g_object_unref);
++@@ -632,7 +733,17 @@ early_dbus_init(DisplayOptions *opts)
++ 
++     if (mode != DISPLAY_GL_MODE_OFF) {
++ #ifdef CONFIG_OPENGL
+++#ifdef CONFIG_DARWIN
+++        /*
+++         * On macOS the main loop, and with it every use of OpenGL, runs on
+++         * another thread than this one, and ANGLE wants EGL used from the
+++         * thread that initialized it: see dbus_gl_lazy_init().
+++         */
+++        dbus_pending_gl_mode = mode;
+++        display_opengl = 1;
+++#else
++         egl_init(opts->u.dbus.rendernode, mode, &error_fatal);
+++#endif
++ #else
++         error_report("dbus: GL rendering is not supported");
++ #endif
++diff --git a/ui/dbus.h b/ui/dbus.h
++index d2cc176648..ba255ad6ba 100644
++--- a/ui/dbus.h
+++++ b/ui/dbus.h
++@@ -111,6 +111,10 @@ const char *
++ dbus_display_listener_get_bus_name(DBusDisplayListener *ddl);
++ 
++ extern const DisplayChangeListenerOps dbus_gl_dcl_ops;
+++#if defined(CONFIG_DARWIN) && defined(CONFIG_OPENGL)
+++/* macOS: EGL on the thread that uses it; the display's own context current */
+++bool dbus_gl_make_current_rn(void);
+++#endif
++ extern const DisplayChangeListenerOps dbus_dcl_ops;
++ 
++ #define TYPE_CHARDEV_DBUS "chardev-dbus"
++diff --git a/ui/trace-events b/ui/trace-events
++index f5f82c75db..39945fdb4c 100644
++--- a/ui/trace-events
+++++ b/ui/trace-events
++@@ -200,6 +200,7 @@ dbus_mouse_rel_motion(int dx, int dy) "dx=%d, dy=%d"
++ dbus_touch_send_event(unsigned int kind, uint32_t num_slot, uint32_t x, uint32_t y) "kind=%u, num_slot=%u, x=%d, y=%d"
++ dbus_update(int x, int y, int w, int h) "x=%d, y=%d, w=%d, h=%d"
++ dbus_update_gl(int x, int y, int w, int h) "x=%d, y=%d, w=%d, h=%d"
+++dbus_gl_read_back(int w, int h, int flip) "%dx%d flip=%d"
++ dbus_clipboard_grab(int selection, unsigned int serial) "selection=%d serial=%u"
++ dbus_clipboard_grab_failed(void) ""
++ dbus_clipboard_qemu_request(int type) "type=%d"
 diff --git a/Formula/virglrenderer.rb b/Formula/virglrenderer.rb
 index 91321aa..9b10f78 100644
 --- a/Formula/virglrenderer.rb

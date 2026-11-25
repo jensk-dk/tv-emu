@@ -414,12 +414,23 @@ def launch(opts):
                                                                     "can show the display nowhere else"),
                                hint="leave out --option window=qemu" if asked else "add --graphics emulated")
             # RDK-E's own software draws its user interface: always a display.
-            display = _display_plan(opts, lambda: graphics.probe_vm(qemu, None if own else kind), kind, always=rdke)
+            # (A display that is captured for --screenshot comes from QEMU's VNC server, which the
+            # launcher's window on macOS has no part in.)
+            display = _display_plan(opts, lambda: graphics.probe_vm(qemu, None if own else kind,
+                                                                    launcher_window=own and not opts.screenshot_dir),
+                                    kind, always=rdke)
             if display and rdke_emulated:
+                # Linux: a display that the host's GPU draws comes at 60 only from QEMU 11 on.
+                # macOS: with a QEMU that reads it back for the window it comes at 60 as well
+                # (docs/frame-transfer.md); emulated graphics stays what a run gets unasked.
+                slower = host.host_os() != "macos"
                 display.update({"requested": "auto",
-                                "reason": "the launcher's window gets the RDK-E image's home screen at 60 pictures a "
-                                          "second with emulated graphics, and with host graphics acceleration only "
-                                          "where QEMU is 11 or later; --graphics host asks for that"})
+                                "reason": ("the launcher's window gets the RDK-E image's home screen at 60 pictures a "
+                                           "second with emulated graphics, and with host graphics acceleration only "
+                                           "where QEMU is 11 or later; --graphics host asks for that"
+                                           if slower else
+                                           "an RDK-E image is started with emulated graphics, which is what its "
+                                           "checks are run with; --graphics host asks for it all the same")})
             display_args, display_backend, display_device = [], "none", None
             vnc = None
             if display:

@@ -90,7 +90,7 @@ def window_kind(binary, requested):
     host acceleration is asked for or preferred, the display is shown in
     QEMU's own window: that one can show it, but has no toolbar and takes no
     remote control keys."""
-    if (requested or "auto") == "emulated" or probe_vm(binary)["available"]:
+    if (requested or "auto") == "emulated" or probe_vm(binary, launcher_window=True)["available"]:
         return LAUNCHER_WINDOW
     try:
         own = window_backend(binary)
@@ -108,6 +108,17 @@ def opengl_window(binary, window):
     if window != "cocoa":
         return window in OPENGL_WINDOWS
     return "egl-headless" in _qemu_output(binary, "-display", "help").split()
+
+
+def dbus_read_back(binary):
+    """Whether this QEMU, on macOS, hands a display that the host's GPU drew
+    to a listener of its D-Bus display: it reads each picture back from the
+    GPU and sends its pixels. That is this project's change to the
+    experimental QEMU (docs/macos-experimental-qemu.patch, docs/
+    frame-transfer.md); a build without it ends with a segmentation fault
+    when it is started with that display and OpenGL. The change brings a
+    trace point with it, which names it."""
+    return host.host_os() == "macos" and "dbus_gl_read_back" in _qemu_output(binary, "-trace", "help")
 
 
 def _render_node():
@@ -150,15 +161,19 @@ def _renderer_maps_vulkan(binary):
     return True
 
 
-def probe_vm(binary, window=None):
+def probe_vm(binary, window=None, launcher_window=False):
     """Whether this QEMU can map the guest's graphics to the host's GPU.
+
+    `launcher_window` says that the launcher's own window shows the display:
+    on macOS a QEMU with the read-back (dbus_read_back) can feed that window
+    and nothing else that has no window of QEMU's.
 
     That needs the virtio-gpu device with a host renderer (virglrenderer) and
     a display that gives it a GPU context: the window (`window` names QEMU's
     display for it) when the emulator's display is shown in one, and otherwise
     a display backend that renders without a window.
     """
-    key = (binary, window)
+    key = (binary, window, bool(launcher_window))
     if key in _probes:
         return _probes[key]
     devices = _qemu_output(binary, "-device", "help")
@@ -195,6 +210,10 @@ def probe_vm(binary, window=None):
                  "reason": "on Windows, QEMU's display that renders on the host GPU without a window "
                            "(egl-headless) stays black: the target renders on the host GPU, but no frame "
                            "reaches the emulator's display. In a window (--window) it does"}
+    elif host.host_os() == "macos" and launcher_window and dbus_read_back(binary):
+        probe = {"available": True, "venus": False,
+                 "reason": mapped + " and hands each picture to the launcher's window (QEMU's D-Bus display, "
+                                    "read back from the GPU)"}
     elif host.host_os() == "macos":
         # Seen with a QEMU 11.1.90 build that carries the macOS OpenGL patches:
         # QEMU ends with a segmentation fault as soon as the target's driver
@@ -521,14 +540,18 @@ def window_endpoint(binary, plan, wanted="auto"):
     it is the same display with the GPU's buffers, on Linux and where the
     window can take them (probe_buffer_window); the address then starts with
     "dbus-gl:". `wanted` is the run's choice for that case: "buffer" refuses
-    where they cannot be taken, "vnc" does not use them. Everywhere else, and
-    where this QEMU has no such display, it is QEMU's VNC server
-    (vnc_endpoint).
+    where they cannot be taken, "vnc" does not use them. On macOS it is the
+    display with pixels for one that the host's GPU renders as well, where
+    QEMU reads the picture back (dbus_read_back); nothing else shows such a
+    display in the launcher's window there, so "vnc" is not followed.
+    Everywhere else, and where this QEMU has no such display, it is QEMU's
+    VNC server (vnc_endpoint).
     """
     if wanted not in WINDOW_DISPLAYS:
         raise EmuError("unknown --option window-display=%s (one of: %s)" % (wanted, ", ".join(WINDOW_DISPLAYS)))
     note = None
-    if plan["provider"] == "host" and wanted != "vnc":
+    read_back = plan["provider"] == "host" and wanted != "buffer" and dbus_read_back(binary)
+    if plan["provider"] == "host" and wanted != "vnc" and not read_back:
         found = probe_buffer_window(binary)
         path, directory = _private_socket("display.sock") if found["available"] else (None, None)
         if path:
@@ -538,11 +561,13 @@ def window_endpoint(binary, plan, wanted="auto"):
             raise EmuError("the launcher's window cannot take the display as buffers of the host's GPU: %s"
                            % found["reason"], hint="leave out --option window-display=buffer")
         note = "the window gets the display from QEMU's VNC server, which is slower: %s" % found["reason"]
-    elif host.host_os() in ("macos", "linux") and plan["provider"] != "host" \
+    elif host.host_os() in ("macos", "linux") and (plan["provider"] != "host" or read_back) \
             and "dbus" in _qemu_output(binary, "-display", "help").split():
         path, directory = _private_socket("display.sock")
         if path:
-            return ["-qmp", "unix:%s,server=on,wait=off" % path], DBUS_DISPLAY, DBUS_PREFIX + path, directory, None
+            # ANGLE, which is the experimental QEMU's OpenGL on macOS, is OpenGL ES.
+            backend = DBUS_DISPLAY + (",gl=es" if read_back else "")
+            return ["-qmp", "unix:%s,server=on,wait=off" % path], backend, DBUS_PREFIX + path, directory, None
     arguments, address, directory = vnc_endpoint()
     return arguments, None, address, directory, note
 
