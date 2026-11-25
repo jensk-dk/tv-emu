@@ -274,6 +274,12 @@ def cmd_doctor(args):
         probe = graphics.probe_vm(binary)
         print("graphics    VM mode: %s" % ("host acceleration available: " + probe["reason"] if probe["available"]
                                            else "emulated only: " + probe["reason"]))
+        if probe["available"]:
+            # How the launcher's window gets a display that the host's GPU renders.
+            buffers = graphics.probe_buffer_window(binary)
+            print("graphics    VM mode in the launcher's window: %s" % (
+                "as buffers of the host's GPU: " + buffers["reason"] if buffers["available"]
+                else "from QEMU's VNC server, which is slower: " + buffers["reason"]))
         try:
             # QEMU's own window, which shows the display where the launcher's
             # cannot (graphics.window_kind).

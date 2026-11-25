@@ -4,7 +4,9 @@ How a picture of a VM's display gets from QEMU into the launcher's window on
 the three hosts, what each way costs, what limits the rate today, and what the
 best way is for each host. Written on 2026-11-24 from measurements on the
 Linux host (with its own QEMU 8.2.2 and with a QEMU 11.0.0 built for this)
-and from QEMU's source; nothing was run on macOS or Windows for it.
+and from QEMU's source; nothing was run on macOS or Windows for it. The
+Linux way for host graphics was built the same day
+("Built: the GPU's buffer in the launcher's window" below).
 What was measured and what was only read is said for each statement, and
 "Not verified" at the end lists what is still open.
 
@@ -16,7 +18,7 @@ compositor's output ([target/src/emuscreen.c](../target/src/emuscreen.c)).
 | Host | Target's graphics | Today | Limit today | Best way | Needs |
 |---|---|---|---|---|---|
 | Linux | emulated (the target's CPU draws) | D-Bus, pixels over a socket: 60 a second | none at 1080p | keep; shared memory later | shared memory needs QEMU 9.2 (seen working with 11.0.0) |
-| Linux | host GPU (virgl) | VNC: 22 a second | VNC's 30 ms look, and QEMU 8.2 answers the GPU's fences every 10 ms: the target hands over 30 a second | D-Bus with the GPU's buffer (no copy) | viewer change; 60 a second needs QEMU 11 with virglrenderer 1.1.2 (measured: 59.9 with 11.0.0 and 1.3.0) |
+| Linux | host GPU (virgl) | D-Bus with the GPU's buffer (no copy): 30 a second with QEMU 8.2.2, 60 with QEMU 11.0.0; VNC, where the host does not take the buffers: 22 | QEMU 8.2 answers the GPU's fences every 10 ms | as it is, with QEMU 11 | 60 needs QEMU 11 with virglrenderer 1.1.2 or later, which Ubuntu 24.04 does not have: a build of both (`EMU_QEMU_DIR`) |
 | macOS | emulated | D-Bus, pixels over a socket: 60 a second | none at 1080p | keep | nothing |
 | macOS | host GPU (experimental QEMU) | QEMU's own window only | no way into the launcher's window | D-Bus with a read-back in QEMU (one copy off the GPU) | a patch to the experimental QEMU |
 | Windows | emulated | VNC | VNC's 30 ms look | D-Bus, shared memory | to be tried: whether the QEMU build has the D-Bus display |
@@ -137,7 +139,9 @@ a video.
   listener gets `ScanoutDMABUF` (signature `huuuutb`) and `UpdateDMABUF`
   (`iiii`) for every picture: 1920x1080, stride 7680, format `AB24`
   (four bytes a pixel as red, green, blue, alpha), modifier
-  `0x0300000000e08014` (one of NVIDIA's), bottom row first. The target
+  `0x0300000000e08014` (one of NVIDIA's), top row first (QEMU's `y0_top`
+  is not set, and QEMU's own windows turn a picture over when it is not:
+  `gd_egl_refresh` in `ui/gtk-egl.c`). The target
   switches between two buffers, so both methods come for each picture.
 - **The NVIDIA driver takes it.** `eglCreateImage` with the descriptor,
   format and modifier gives an image; bound to a texture and read back, it
@@ -177,6 +181,106 @@ build's options were QEMU's defaults.
 
 With host graphics the VM's 4 CPUs are 77 % idle during 1920x1080 video; with
 emulated graphics the same video needs 8 CPUs for 57 pictures a second.
+
+## Built: the GPU's buffer in the launcher's window
+
+Built on 2026-11-24, for Linux, and run with QEMU 8.2.2 on the host above.
+
+- **The listener** ([emulator/dbusdisplay.py](../emulator/dbusdisplay.py))
+  takes the descriptors that come with a message, hands each
+  `ScanoutDMABUF` to the viewer, and answers an `UpdateDMABUF` when the
+  viewer has drawn the picture, or after 0.1 s where it draws nothing (a
+  hidden window). `ScanoutDMABUF2` is not offered: QEMU then sends the
+  first form for a buffer of one plane, which is what a display is.
+- **The viewer** ([emulator/gui/gldisplay.py](../emulator/gui/gldisplay.py))
+  has an OpenGL widget for such a display. It makes an EGL image of the
+  descriptor and a texture of the image, through `ctypes`, and draws the
+  texture scaled into the window. Qt is started with
+  `QT_XCB_GL_INTEGRATION=xcb_egl` and asked for OpenGL ES 3. It does not
+  wait for the screen's refresh when it shows a picture (swap interval 0):
+  QEMU holds the target's drawing until the picture is drawn, so a window
+  that waits sets the target's pace, and with the screen asleep the NVIDIA
+  driver let such a window show one picture a second. The toolbar, the
+  keys and the on-screen remote control are as before.
+- **Captures** are read back from the texture: the checks' `save-display`,
+  and `--screenshot`, which asks the window where only it has the picture.
+- **The choice** (`window_endpoint` in
+  [emulator/graphics.py](../emulator/graphics.py)): for host graphics the
+  launcher asks the windows' Python whether Qt's context takes GPU buffers
+  (`python -m emulator.gui.gldisplay --probe`; `./emu doctor` shows the
+  answer). Where it does, QEMU gets `-display dbus,p2p=yes,gl=on`; where it
+  does not, `-display egl-headless` and VNC as before, with a note.
+  `--option window-display=vnc` asks for VNC, `=buffer` refuses to fall
+  back. A buffer that the driver refuses once the run is on is said in the
+  window and on the terminal, with that option.
+
+Measured, the RDK-E image with `--graphics host`, the VM's CPUs as the
+launcher's checks give them (8), 1920x1080, as pictures that QEMU announced
+and the window drew in 10 s (one run each, the screen asleep):
+
+| | Over VNC (before) | GPU's buffer, QEMU 8.2.2 | GPU's buffer, QEMU 11.0.0 |
+|---|---|---|---|
+| Home screen | (a still screen is not sent again) | 30.0 a second | 60.0 |
+| Big Buck Bunny, 1920x1080 | 22.5 | 30.0 | 60.0 |
+
+So the window shows every picture the target hands over: 30 a second where
+QEMU answers the fences from its 10 ms timer, 60 where it does not (above).
+QEMU 11.0.0 is the one built for this document, with virglrenderer 1.3.0,
+taken with `EMU_QEMU_DIR`.
+
+While the window still waited for the screen's refresh, QEMU 8.2.2 gave 34
+to 53 pictures a second in seven runs, different each time: holding back
+the answer to QEMU changes when the fences are answered. That was with the
+screen awake; with it asleep the same window drew one picture a second.
+
+What QEMU 11.0.0 needed from the launcher on Linux:
+
+- **The window has to listen before QEMU starts.** QEMU connects to the
+  window's port for the remote control's keys, and tries again each second
+  (`reconnect-ms`). QEMU 11.0.0 ends, aborted and without a message, 1.3 s
+  after its start when nothing listens there; the window sometimes took
+  longer to start. The launcher now waits for the port
+  (`wait_listening` in [emulator/window.py](../emulator/window.py)).
+  QEMU 8.2.2 only tries again.
+- **Vulkan only where the renderer has it.** QEMU 11's display device has
+  the option for Vulkan (`venus`) whatever virglrenderer it is built with,
+  and the launcher turned it on wherever the option is. With a
+  virglrenderer built without it QEMU ends when the target first uses the
+  GPU ("failed to initialize venus renderer"). The launcher now looks at
+  the library (`_renderer_maps_vulkan` in
+  [emulator/graphics.py](../emulator/graphics.py)).
+- QEMU 11.0.0 says "audio: Can not open `virtio-sound.in' (no host audio
+  driver)" for the launcher's sound device, which only plays. It goes on,
+  and the target's sound was not checked with it here.
+
+Also seen:
+
+- **A 4K display reaches the window whole** (3840x2160, the OpenGL ES
+  test), where VNC in QEMU 8.2.2 serves 2560x2048 of it.
+- **The Debian image's checks pass on this way**: the window checks of the
+  host-native VM and `window-display` of both simulated ARM targets, all
+  with host graphics, which compare the picture pixel for pixel
+  (`tasks.md` has the list).
+- **The launcher's checks with each QEMU**, on 2026-11-24, the checks of
+  the host-native VM and of the RDK-E image:
+
+  | | Passed | Not passed |
+  |---|---|---|
+  | QEMU 8.2.2 | 39 of 41 | `rdke-rate`; `resolution-vm` once, passed in two runs alone after |
+  | QEMU 11.0.0 | 38 of 39 | `rdke-rate` |
+
+  `rdke-rate` fails without these changes as well: it plays the reference
+  stream with emulated graphics, gets 35 pictures a second and wants 50.
+  The two checks more with QEMU 8.2.2 are `window-display` of the simulated
+  ARM targets, which the QEMU 11.0.0 built here cannot run. `rdke-aamp`,
+  `rdke-health` and `rdke-device` were unavailable in both: the RDK-E image
+  was older than the checks.
+- **QEMU ends on a failed assertion when the target shuts down** while a
+  listener for GPU buffers is there (`dbus_scanout_texture: Assertion
+  'tex_id' failed`, QEMU 8.2.2; the same line is in 11.0.0's source). The
+  launcher has the window let go of the display when a workload reports
+  its exit status, which avoids it. An RDK-E target that is shut down from
+  inside, and not by closing the window, still ends QEMU that way.
 
 ## Read in the source, not run
 
@@ -233,7 +337,8 @@ emulated graphics the same video needs 8 CPUs for 57 pictures a second.
    1 ms off each frame and needs QEMU 9.2; it is worth having only together
    with a newer QEMU for the next point, or for 4K.
 2. **Host graphics: the GPU's buffer over D-Bus.** No copy at all, and it
-   works with this host's driver. To build:
+   works with this host's driver. Built on 2026-11-24 (above), as planned
+   here:
    - the listener takes `ScanoutDMABUF` and `UpdateDMABUF` with the
      descriptor (and `ScanoutDMABUF2` from QEMU 10.1), and answers
      `UpdateDMABUF` only when the picture is drawn, as QEMU holds the
@@ -252,15 +357,16 @@ emulated graphics the same video needs 8 CPUs for 57 pictures a second.
    launcher, as the Mac has one (`EMU_QEMU_DIR`). Measured with such a
    build: 59.9 pictures a second reach a listener. It took four sources
    (QEMU, virglrenderer, libepoxy, libslirp; the host's packages lack their
-   development files) and about ten minutes. Points 2 and 3 together are
+   development files) and about ten minutes. In the launcher's window that
+   build gives 60.0 a second (above). Points 2 and 3 together are
    what makes host graphics the better choice for the RDK-E image on this
    host: 60 a second with the VM's CPUs three quarters idle, where emulated
    graphics needs 8 CPUs for 57. Either alone gives 30 (point 2) or 22
    (point 3, over VNC).
 4. **Before QEMU 11 becomes the launcher's on Linux**: the slower CPU-drawn
-   display seen with it (above) has to be understood, and the launcher's
-   options tried with it (`reconnect=` of a socket is `reconnect-ms=` there,
-   which the launcher knows from the other hosts' QEMU 11).
+   display seen with it (above) has to be understood, and the setup script
+   has to provide it, with the ARM targets. The launcher itself starts it
+   and passes its checks with it (above).
 
 ### macOS
 
@@ -300,18 +406,23 @@ and QEMU chooses by that.
 
 ## Not verified
 
-- **The window's rate with any of this.** The rates above are of messages
-  reaching a listener that only counts them. No viewer drew them.
+- **Vulkan with QEMU 11.** The virglrenderer built here has no Vulkan
+  mapping (the host lacks Vulkan's development files), so the target's
+  Vulkan stays on its CPU with that build, as with QEMU 8.2.2.
+- **A QEMU 11 that the setup script provides on Linux.** The one used here
+  was built by hand into a scratch directory, for x86-64 targets only.
 - **Why the CPU-drawn display is slower with the QEMU 11.0.0 built here**
   (44 to 54 a second against 55 to 60).
-- **QEMU 11 in the launcher on Linux.** It was started by hand with the
-  launcher's command line, without the remote control's channel; no check
-  was run with it.
-- **The whole path in the launcher's viewer.** The import was done in a Qt
-  context without a window; drawing it in the window, at what rate, and
-  whether a picture is ever shown half drawn were not tried.
+- **QEMU 11 on Linux beyond the host-native VM.** The launcher's checks
+  were run with it for the host-native VM and the RDK-E image only (above):
+  the build has no ARM targets, the full `./emu verify` was not run with
+  it, and the target's sound was not listened to.
+- **Whether a picture is ever shown half drawn.** None was seen in the
+  captures; nothing looked for one. The target shows its pictures from two
+  buffers in turn, so the one the window draws from is not being written.
 - **Other drivers.** Only the NVIDIA driver 595 on X11 was tried. Mesa's
-  drivers (Intel, AMD) and a Wayland session were not.
+  drivers (Intel, AMD), a Wayland session and a screen with a scale factor
+  were not.
 - **Anything on macOS or Windows.** All of it is read from the source and
   from the launcher's earlier notes.
 - **3840x2160.** The copy times are for 1920x1080.

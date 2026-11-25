@@ -68,19 +68,39 @@ PARALLEL_MAKE:pn-wpe-webkit = "-j 2"
 WPE_WEBKIT_LTO:pn-wpe-webkit = ""
 EOC
 [ -f /work/rdk/local-extra.conf ] && cat /work/rdk/local-extra.conf >> conf/local.conf
-bitbake "$@" || exit 1
-deploy=tmp/deploy/images/$TVEMU_MACHINE
+bitbake "$@"
+EOT
+# The copy runs apart from the build, as the container's root: the build's
+# user is the container's own (bitbake refuses to run as root), and it can
+# write to the host's directory only where the host's user happens to have
+# its number. The files get the owner of the directory they are copied to,
+# which is the host's user, or root where the engine maps that to the host's
+# user (rootless).
+cat > "$work/copy-in-container.sh" <<'EOT'
+#!/bin/bash
+set -e
+userland=$1; kind=$2
+directory=build-$userland${kind:+-$kind}
+[ "$TVEMU_MACHINE" = tvemu-arm64-rdke ] || directory=build-${TVEMU_MACHINE#tvemu-}-$userland${kind:+-$kind}
+deploy=/build/$directory/tmp/deploy/images/$TVEMU_MACHINE
 kernel=$([ "$TVEMU_MACHINE" = tvemu-arm64-rdke ] && echo Image || echo bzImage)
 # Each as a new file that takes the old one's name: a VM that is running
 # keeps the image it started from.
-cp -L $deploy/$kernel /out/$kernel.new && mv -f /out/$kernel.new /out/$kernel
+place() {
+  cp -L "$1" "/out/$2.new"
+  chown --reference=/out "/out/$2.new"
+  mv -f "/out/$2.new" "/out/$2"
+}
+place $deploy/$kernel $kernel
 image=$(ls -t $deploy/*.ext4 | head -1)
-cp -L "$image" /out/rootfs.ext4.new && mv -f /out/rootfs.ext4.new /out/rootfs.ext4
+place "$image" rootfs.ext4
 echo "copied $kernel and $(basename "$image") (as rootfs.ext4)"
 EOT
-chmod +x "$work/build-in-container.sh"
+chmod +x "$work/build-in-container.sh" "$work/copy-in-container.sh"
 
 "$runtime" volume create tvemu-rdke-build >/dev/null
 "$runtime" run --rm --user root -v tvemu-rdke-build:/build tvemu-rdke-check chown builder:builder /build
 "$runtime" run --rm -v "$work:/work/rdk:ro" -v "$here/meta-tvemu-rdke:/work/meta-tvemu-rdke:ro" \
-  -v tvemu-rdke-build:/build -v "$out:/out" -e TVEMU_MACHINE tvemu-rdke-check /work/rdk/build-in-container.sh "$userland" "$layers_kind" $targets
+  -v tvemu-rdke-build:/build -e TVEMU_MACHINE tvemu-rdke-check /work/rdk/build-in-container.sh "$userland" "$layers_kind" $targets
+"$runtime" run --rm --user root -v "$work:/work/rdk:ro" -v tvemu-rdke-build:/build:ro -v "$out:/out" \
+  -e TVEMU_MACHINE tvemu-rdke-check /work/rdk/copy-in-container.sh "$userland" "$layers_kind"

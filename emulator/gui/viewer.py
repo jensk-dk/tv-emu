@@ -7,8 +7,10 @@
 It shows the target's display, which it follows with the remote framebuffer
 protocol (emulator/rfb.py): ADDRESS is a socket path or HOST:PORT. Or, where
 the launcher says so with an ADDRESS that starts with "dbus:", with QEMU's
-D-Bus display (emulator/dbusdisplay.py). The display is scaled to the window,
-keeping its shape.
+D-Bus display (emulator/dbusdisplay.py); with "dbus-gl:" the pictures are
+buffers of the host's GPU, which the window draws with OpenGL
+(emulator/gui/gldisplay.py). The display is scaled to the window, keeping its
+shape.
 
 Windowed, it has a small toolbar: mute, 1:1 (one pixel of the display on one
 pixel of the screen), full screen, and the on-screen remote control. Full
@@ -36,6 +38,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QToolBar, QWidget
 
 from .. import dbusdisplay, graphics, hostaudio, redrat, remote, rfb
 from ..errors import EmuError
+from .gldisplay import Shaped
 from .redrat import Receiver
 from .remote_window import RemoteControlWindow
 
@@ -75,9 +78,10 @@ class Feed(QObject):
     sized = Signal(int, int)
     updated = Signal(int, int, int, int, object)
     state = Signal(str)
+    buffer = Signal(object)
 
 
-class Display(QWidget):
+class Display(Shaped, QWidget):
     """The target's display, scaled to the widget and centred in it."""
 
     def __init__(self):
@@ -92,15 +96,12 @@ class Display(QWidget):
     def display_size(self):
         return (self.image.width(), self.image.height()) if self.image is not None else (1920, 1080)
 
-    def natural_size(self):
-        """The widget size at which one pixel of the display is one pixel of
-        the screen."""
-        ratio = self.devicePixelRatioF()
-        width, height = self.display_size()
-        return QSize(round(width / ratio), round(height / ratio))
+    def has_picture(self):
+        return self.image is not None
 
-    def sizeHint(self):
-        return self.natural_size()
+    def picture(self):
+        """What arrived from the target, pixel for pixel; None before the first."""
+        return self.image
 
     def on_size(self, width, height):
         self.image = QImage(width, height, QImage.Format.Format_RGB32)
@@ -121,13 +122,6 @@ class Display(QWidget):
     def on_state(self, text):
         self.message = text
         self.update()
-
-    def shown_rect(self):
-        """Where in the widget the display is drawn."""
-        width, height = self.display_size()
-        scale = min(self.width() / width, self.height() / height)
-        shown = QSize(max(1, round(width * scale)), max(1, round(height * scale)))
-        return QRect(QPoint((self.width() - shown.width()) // 2, (self.height() - shown.height()) // 2), shown)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -214,16 +208,25 @@ class Window(QMainWindow):
         self.pressed = {}               # host key -> remote control key code, while it is down
         self.setWindowTitle(args.title)
 
-        self.display = Display()
-        self.setCentralWidget(self.display)
         self.feed = Feed()
+        address = args.display
+        if _from_gpu(address):
+            from .gldisplay import GLDisplay
+            self.display = GLDisplay()
+            self.display.on_failure = self.display_failed
+            self.feed.buffer.connect(self.display.on_buffer)
+            self.client = dbusdisplay.Client(address[len(graphics.DBUS_GL_PREFIX):], self.feed.sized.emit,
+                                             self.feed.updated.emit, self.feed.state.emit, self.feed.buffer.emit)
+        else:
+            self.display = Display()
+            follow = rfb.Client
+            if isinstance(address, str) and address.startswith(graphics.DBUS_PREFIX):
+                follow, address = dbusdisplay.Client, address[len(graphics.DBUS_PREFIX):]
+            self.client = follow(address, self.feed.sized.emit, self.feed.updated.emit, self.feed.state.emit)
+        self.setCentralWidget(self.display)
         self.feed.sized.connect(self.on_size)
         self.feed.updated.connect(self.display.on_update)
         self.feed.state.connect(self.display.on_state)
-        follow, address = rfb.Client, args.display
-        if isinstance(address, str) and address.startswith(graphics.DBUS_PREFIX):
-            follow, address = dbusdisplay.Client, address[len(graphics.DBUS_PREFIX):]
-        self.client = follow(address, self.feed.sized.emit, self.feed.updated.emit, self.feed.state.emit)
         self.display.client = self.client
         self.fitted = None              # the window size this program last chose, if it still has it
 
@@ -300,6 +303,12 @@ class Window(QMainWindow):
         super().changeEvent(event)
 
     # ----------------------------------------------------------- display
+
+    def display_failed(self, text):
+        """The host did not take the target's pictures as GPU buffers: said
+        once, with the way round it. The window stays, with the same text."""
+        print("emu: the window cannot show the target's display: %s. --option window-display=vnc shows it "
+              "another way" % text, file=sys.stderr, flush=True)
 
     def on_size(self, width, height):
         self.display.on_size(width, height)
@@ -481,7 +490,11 @@ class Control(QObject):
                 shown = window.display.shown_rect()
                 self.answer({
                     "connected": window.client.connected, "updates": window.client.updates,
-                    "display": [width, height] if window.display.image is not None else None,
+                    "display": [width, height] if window.display.has_picture() else None,
+                    "from_gpu": _from_gpu(window.args.display),
+                    # Pictures the window drew, where it counts them (a display from the GPU).
+                    "drawn": getattr(window.display, "drawn", None),
+                    "display_failure": getattr(window.display, "failure", None),
                     "widget": [window.display.width(), window.display.height()],
                     "shown": [shown.width(), shown.height()],
                     "natural": [natural.width(), natural.height()],
@@ -495,8 +508,8 @@ class Control(QObject):
                     "remote_buttons": sorted(window.remote_window.buttons) if window.remote_window else []})
             elif what == "save-display":
                 # What arrived from the target, pixel for pixel.
-                image = window.display.image
-                ok = image is not None and image.save(command["path"])
+                image = window.display.picture()
+                ok = image is not None and image.save(command["path"], command.get("format"))
                 answer = {"saved": bool(ok)}
                 if not ok:      # say why, for whoever asked
                     answer["reason"] = ("no picture of the display has arrived yet" if image is None else
@@ -555,8 +568,13 @@ def _size(text):
     return int(width), int(height)
 
 
+def _from_gpu(address):
+    """Whether the display comes as buffers of the host's GPU."""
+    return isinstance(address, str) and address.startswith(graphics.DBUS_GL_PREFIX)
+
+
 def _address(text):
-    if text.startswith(graphics.DBUS_PREFIX):
+    if text.startswith((graphics.DBUS_PREFIX, graphics.DBUS_GL_PREFIX)):
         return text
     host, separator, port = text.rpartition(":")
     if separator and port.isdigit() and "/" not in text and "\\" not in text:
@@ -620,6 +638,9 @@ def main(argv=None):
         sender = remote.ExecSender(args.keys_exec)
     elif args.keys_listen:
         sender = remote.ListenSender(args.keys_listen)
+    if _from_gpu(args.display):
+        from . import gldisplay
+        gldisplay.prepare()
     application = QApplication(sys.argv[:1])
     application.setApplicationName("Emulator")
     awake = _stay_awake()
@@ -627,6 +648,13 @@ def main(argv=None):
     if args.redrat_profile:
         signal.signal(signal.SIGTERM, lambda *_: window.close())
         signal.signal(signal.SIGINT, lambda *_: window.close())
+    if hasattr(signal, "SIGUSR1"):
+        # The launcher's word that the target is about to end (emulator/window.py, release).
+        # Python runs a signal's handler only when it gets a turn, which the timer gives it.
+        signal.signal(signal.SIGUSR1, lambda *_: window.client.close())
+        turns = QTimer()
+        turns.timeout.connect(lambda: None)
+        turns.start(50)
     window.show()
     window.raise_()
     window.activateWindow()

@@ -35,7 +35,9 @@ grep -E "^ERROR|Nothing R?PROVIDES|was skipped|Missing or unbuildable|Tasks Summ
 echo "bitbake's status: $status"
 EOT
 chmod +x "$work/probe-in-container.sh"
-mkdir -p "$work/probe"
+# The container's user writes the file, and has the host user's number only
+# on some hosts: the directory takes files from anyone.
+mkdir -p "$work/probe" && chmod a+rwx "$work/probe"
 "$runtime" run --rm -e TVEMU_MACHINE -v "$work/probe:/out" -e PROBE_LINES="${PROBE_LINES:-80}" -e PROBE_HEAD="${PROBE_HEAD:-0}" -v "$work:/work/rdk:ro" \
   -v "$here/meta-tvemu-rdke:/work/meta-tvemu-rdke:ro" \
   tvemu-rdke-check /work/rdk/probe-in-container.sh "$userland" $targets

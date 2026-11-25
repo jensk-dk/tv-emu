@@ -126,10 +126,13 @@ everything here was found by building and running it, on the Linux host
   its picture and BACK shows the home screen again (seen in captures of the
   launcher's window, two runs), and the VM's 4 CPUs are 77 % idle during the
   1920x1080 stream. The launcher's window got 22.5 pictures a second of it
-  all the same: a display that the host's GPU draws reaches the window over
-  VNC, not over D-Bus (the D-Bus display would hand over the GPU's own
-  buffers, which the window does not take yet). So emulated graphics stays
-  the default for an RDK-E target. Only `libwesteros_render_embedded`, the
+  over VNC. Since 2026-11-24 the window takes the GPU's own buffers over
+  D-Bus (`emulator/gui/gldisplay.py`; `docs/frame-transfer.md`), and gets
+  every picture the target hands over: 30.0 a second of the home screen
+  and of the same video with QEMU 8.2.2, which holds a GPU-accelerated
+  target to that, and 60.0 of both with a QEMU 11.0.0 built by hand
+  (`EMU_QEMU_DIR`). Emulated graphics is still the default for an RDK-E
+  target: with the host's own QEMU its home screen is at 60. Only `libwesteros_render_embedded`, the
   renderer RDK's window manager loads, has the change; the copy was not
   timed, and the frame rate inside the VM was not measured.
 - *The launcher's window gets the display over D-Bus on Linux too*, as on

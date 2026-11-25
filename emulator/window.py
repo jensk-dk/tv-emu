@@ -8,10 +8,12 @@ library.
 """
 import json
 import os
+import signal
 import socket
 import subprocess
 import sys
 import threading
+import time
 
 from . import host, redrat
 from .errors import EmuError
@@ -67,6 +69,21 @@ def _environment():
                           "PYTHONDONTWRITEBYTECODE": "1"})
 
 
+def probe_buffers():
+    """Whether the windows' Qt takes buffers of the host's GPU
+    (emulator/gui/gldisplay.py): {"available": ..., "reason": ...}."""
+    python = gui_python()
+    if not python:
+        return {"available": False, "reason": "Qt for Python (%s) is not installed" % PACKAGE}
+    try:
+        done = subprocess.run([python, "-m", "emulator.gui.gldisplay", "--probe"], capture_output=True, text=True,
+                              timeout=60, env=_environment())
+        lines = [line for line in done.stdout.splitlines() if line.startswith("{")]
+        return json.loads(lines[-1])
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        return {"available": False, "reason": "the windows' Qt could not be asked whether it takes GPU buffers"}
+
+
 class Viewer:
     """The display window of one run, as a process."""
 
@@ -97,6 +114,14 @@ class Viewer:
     def running(self):
         return self.process.poll() is None
 
+    def release(self):
+        """Have the window stop following the display; it keeps its last picture."""
+        if self.process.poll() is None and hasattr(signal, "SIGUSR1"):
+            try:
+                self.process.send_signal(signal.SIGUSR1)
+            except OSError:
+                pass
+
     def close(self):
         if self.process.poll() is None:
             self.process.terminate()
@@ -105,6 +130,22 @@ class Viewer:
             except subprocess.TimeoutExpired:
                 self.process.kill()
                 self.process.wait()
+
+
+def wait_listening(viewer, port, seconds=20):
+    """Wait until the display window listens on `port` of the loopback
+    address; returns whether it does. For a port that QEMU connects to itself:
+    QEMU 11.0.0 ends (abort, no message) when a socket it is to connect again
+    and again (reconnect-ms) is refused twice, and the window takes a moment
+    to start. The window keeps the newest connection, so this one does no harm."""
+    deadline = time.time() + seconds
+    while time.time() < deadline and viewer.running():
+        try:
+            socket.create_connection(("127.0.0.1", port), timeout=1).close()
+            return True
+        except OSError:
+            time.sleep(0.05)
+    return False
 
 
 def start_viewer(display, title, fullscreen=False, keys_exec=None, keys_listen=None,

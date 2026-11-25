@@ -120,6 +120,36 @@ def _render_node():
     return None
 
 
+def _renderer_maps_vulkan(binary):
+    """Whether the virglrenderer this QEMU uses was built to map Vulkan
+    (venus). QEMU's device has the option whenever QEMU knows it, and with a
+    renderer built without it QEMU ends when the target first uses the GPU
+    ("failed to initialize venus renderer"; seen with QEMU 11.0.0 and a
+    virglrenderer 1.3.0 built with its defaults). A renderer with it names
+    the server program it starts for Vulkan. True where the library is not
+    found: then the option decides as before."""
+    programs = [binary]
+    # Where QEMU's devices are modules, the display device's is what uses the renderer.
+    root = os.path.dirname(os.path.dirname(os.path.realpath(binary)))
+    programs += glob.glob(os.path.join(root, "lib", "**", "hw-display-virtio-gpu-gl.so"), recursive=True)
+    for program in programs:
+        try:
+            listed = subprocess.run(["ldd", program], capture_output=True, text=True, timeout=30,
+                                    env=host.tool_env()).stdout
+        except (OSError, subprocess.SubprocessError):
+            continue
+        for line in listed.splitlines():
+            name, _, rest = line.strip().partition(" => ")
+            path = rest.split(" (")[0].strip()
+            if name.startswith("libvirglrenderer") and os.path.isfile(path):
+                try:
+                    with open(path, "rb") as library:
+                        return b"virgl_render_server" in library.read()
+                except OSError:
+                    return True
+    return True
+
+
 def probe_vm(binary, window=None):
     """Whether this QEMU can map the guest's graphics to the host's GPU.
 
@@ -134,7 +164,8 @@ def probe_vm(binary, window=None):
     devices = _qemu_output(binary, "-device", "help")
     displays = _qemu_output(binary, "-display", "help")
     # Vulkan is mapped as well where vm_arguments turns that on.
-    venus = host.host_os() == "linux" and "venus" in _qemu_output(binary, "-device", "virtio-gpu-gl-pci,help")
+    venus = host.host_os() == "linux" and "venus" in _qemu_output(binary, "-device", "virtio-gpu-gl-pci,help") \
+        and _renderer_maps_vulkan(binary)
     mapped = "QEMU maps the target's OpenGL ES%s to the host GPU (virtio-gpu with virglrenderer)" \
              % (" and Vulkan" if venus else "")
     if "virtio-gpu-gl-pci" not in devices:
@@ -451,25 +482,89 @@ def vnc_endpoint():
 
 DBUS_DISPLAY = "dbus,p2p=yes"
 DBUS_PREFIX = "dbus:"
+# The same display with OpenGL: a picture that the host's GPU rendered is
+# handed over as the GPU's buffer.
+DBUS_GL_DISPLAY = "dbus,p2p=yes,gl=on"
+DBUS_GL_PREFIX = "dbus-gl:"
+# How the launcher's window gets a display that the host's GPU renders.
+WINDOW_DISPLAYS = ("auto", "buffer", "vnc")
 
 
-def window_endpoint(binary, plan):
+def probe_buffer_window(binary):
+    """Whether the launcher's window can take a VM's display as buffers of the
+    host's GPU: {"available": ..., "reason": ...}. That needs QEMU's D-Bus
+    display, Linux (the buffers are its dma-bufs), and a Qt whose OpenGL
+    context takes them, which the window's own Python is asked."""
+    key = (binary, "buffer-window")
+    if key in _probes:
+        return _probes[key]
+    if host.host_os() != "linux":
+        probe = {"available": False, "reason": "QEMU hands over GPU buffers on Linux only"}
+    elif "dbus" not in _qemu_output(binary, "-display", "help").split():
+        probe = {"available": False, "reason": "this QEMU build has no D-Bus display"}
+    else:
+        from . import window
+        probe = window.probe_buffers()
+    _probes[key] = probe
+    return probe
+
+
+def window_endpoint(binary, plan, wanted="auto"):
     """Where the launcher's window gets a VM's display from. Returns (QEMU
     arguments, QEMU's display backend or None for the one already chosen,
-    address for the window, directory to remove afterwards).
+    address for the window, directory to remove afterwards, a note for the
+    user or None).
 
     On macOS and Linux, for a display that the target's CPU renders, it is QEMU's D-Bus
     display over a private socket (emulator/dbusdisplay.py, which says why);
-    the address then starts with "dbus:". Everywhere else, and where this
-    QEMU has no such display, it is QEMU's VNC server (vnc_endpoint).
+    the address then starts with "dbus:". For one that the host's GPU renders
+    it is the same display with the GPU's buffers, on Linux and where the
+    window can take them (probe_buffer_window); the address then starts with
+    "dbus-gl:". `wanted` is the run's choice for that case: "buffer" refuses
+    where they cannot be taken, "vnc" does not use them. Everywhere else, and
+    where this QEMU has no such display, it is QEMU's VNC server
+    (vnc_endpoint).
     """
-    if host.host_os() in ("macos", "linux") and plan["provider"] != "host" \
+    if wanted not in WINDOW_DISPLAYS:
+        raise EmuError("unknown --option window-display=%s (one of: %s)" % (wanted, ", ".join(WINDOW_DISPLAYS)))
+    note = None
+    if plan["provider"] == "host" and wanted != "vnc":
+        found = probe_buffer_window(binary)
+        path, directory = _private_socket("display.sock") if found["available"] else (None, None)
+        if path:
+            return (["-qmp", "unix:%s,server=on,wait=off" % path], DBUS_GL_DISPLAY, DBUS_GL_PREFIX + path, directory,
+                    None)
+        if wanted == "buffer":
+            raise EmuError("the launcher's window cannot take the display as buffers of the host's GPU: %s"
+                           % found["reason"], hint="leave out --option window-display=buffer")
+        note = "the window gets the display from QEMU's VNC server, which is slower: %s" % found["reason"]
+    elif host.host_os() in ("macos", "linux") and plan["provider"] != "host" \
             and "dbus" in _qemu_output(binary, "-display", "help").split():
         path, directory = _private_socket("display.sock")
         if path:
-            return ["-qmp", "unix:%s,server=on,wait=off" % path], DBUS_DISPLAY, DBUS_PREFIX + path, directory
+            return ["-qmp", "unix:%s,server=on,wait=off" % path], DBUS_DISPLAY, DBUS_PREFIX + path, directory, None
     arguments, address, directory = vnc_endpoint()
-    return arguments, None, address, directory
+    return arguments, None, address, directory, note
+
+
+class WindowCapture:
+    """Captures a display that the launcher's window gets as buffers of the
+    host's GPU: only the window has the picture then, so it is asked.
+    `viewer` is set when the window is started."""
+
+    def __init__(self):
+        self.viewer = None
+
+    def capture(self, path, image_format):
+        if self.viewer is None:
+            raise EmuError("the display window was not started")
+        answer = self.viewer.ask(do="save-display", path=os.path.abspath(path), format=image_format)
+        if not answer.get("saved"):
+            raise EmuError("the display window could not capture the display: %s"
+                           % (answer.get("reason") or answer.get("error") or "no reason given"))
+
+    def close(self):
+        pass
 
 
 def capture_endpoint(plan, vnc=None):

@@ -617,10 +617,14 @@ the emulator.
   hidden; the toolbar button or Ctrl+Alt+R toggles it.
 - **How the display gets there.** In VM mode QEMU serves it
   ([docs/frame-transfer.md](docs/frame-transfer.md) has what each way costs
-  and what would be the best one on each host). On Windows, and on Linux for
-  a display that the host's GPU renders, that is its VNC server, on a socket
-  of the run or, on Windows, on a loopback port. On macOS and Linux, for a
-  display that the target's CPU renders, it is
+  and what would be the best one on each host). On Linux, a display that
+  the host's GPU renders comes as the GPU's own buffers, which the window
+  draws with OpenGL without a copy
+  ([emulator/gui/gldisplay.py](emulator/gui/gldisplay.py)); `./emu doctor`
+  says whether the host's Qt and graphics driver take them, and where they
+  do not, or with `--option window-display=vnc`, it is QEMU's VNC server on
+  a socket of the run. On Windows it is the VNC server on a loopback port.
+  On macOS and Linux, for a display that the target's CPU renders, it is
   QEMU's D-Bus display over a private socket pair
   ([emulator/dbusdisplay.py](emulator/dbusdisplay.py)): QEMU's VNC server
   passed on 15 to 20 pictures a second of a display that changed 35 times a
@@ -654,10 +658,12 @@ Limits:
 - On Windows, QEMU shows a display rendered on the host GPU only in its own
   window, so `--mode vm --window --graphics host` gets that window there,
   without toolbar or keys; use `--graphics emulated` for the launcher's.
-- In VM mode the launcher's window reads the display from QEMU's VNC server,
-  which in QEMU 8.2 (the Linux host's) serves no more than 2560x2048 pixels.
-  Of a 4K display the window then shows the top left part, with host and
-  with emulated graphics alike, and the launcher says so. `--option
+- Where the launcher's window reads a VM's display from QEMU's VNC server,
+  QEMU 8.2 (the Linux host's) serves no more than 2560x2048 pixels. Of a 4K
+  display the window then shows the top left part, and the launcher says
+  so. A display that the host's GPU renders comes as the GPU's buffers on
+  Linux, and the window then has all of a 4K display (seen on 2026-11-24).
+  `--option
   window=qemu` shows the whole 4K display there, rendered on the host GPU, in
   QEMU's own window. QEMU 11 (macOS, Windows) serves all of it.
 - Full screen is the window system's: on macOS it worked when the system had

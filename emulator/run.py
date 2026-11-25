@@ -37,6 +37,8 @@ KNOWN_OPTIONS = {
     "host-address": "container mode: name or address containers use to reach the host",
     "host-bind": "container mode: address host-side processes listen on",
     "venus": "VM mode with host graphics: map Vulkan to the host GPU too (yes/no, default: when QEMU offers it on Linux)",
+    "window-display": "VM mode with host graphics in the launcher's window: buffer gets the display as buffers of "
+                      "the host's GPU, vnc from QEMU's VNC server (default: buffer where the host can, on Linux)",
     "window": "VM mode with a window: qemu shows the display in QEMU's own window, which has no toolbar and takes "
               "no remote control keys (default: the launcher's window wherever it can show the display)",
     vm.FORWARD_OPTION: "VM mode: ports of the target reached from this host's loopback address, as "
@@ -101,6 +103,7 @@ class Outcome:
         self.protocol_errors = []
         self.host_traces = {}
         self.screens = []               # display captures, one per frame a workload announced
+        self.on_exit = None             # called when the workload reports its exit status
         self.notes = []
         self.output = []                # captured console lines
         self.started_at = None
@@ -208,9 +211,10 @@ def launch(opts):
         # starts a program, which a run that is refused before anything is started does not do.)
         opts.cpus = default_cpus(rdke, rdke and (opts.arch == "native" or opts.arch == host.host_arch()))
     # The RDK-E image draws on the target's CPU (Mesa's llvmpipe) unless host
-    # graphics is asked for. A display that the host's GPU draws (virgl)
-    # reaches the launcher's window over VNC only, at about 22 pictures a
-    # second, where one drawn on the target's CPU gets 60 (rdke/README.md).
+    # graphics is asked for. Its home screen reaches the launcher's window 60
+    # times a second so. A display that the host's GPU draws (virgl) reaches
+    # it 30 times a second on the Linux host with QEMU 8.2.2 and 60 times with
+    # QEMU 11, as the GPU's buffers (rdke/README.md, docs/frame-transfer.md).
     rdke_emulated = rdke and (opts.graphics or "auto") == "auto"
     if rdke_emulated:
         opts.graphics = "emulated"
@@ -277,6 +281,8 @@ def launch(opts):
     console = None
     viewer = None
     viewer_plan = None      # what the display window is started with
+    window_capture = None   # the capture of a display that only the window has
+    from_gpu = False        # the window gets the display as buffers of the host's GPU
     keys_first = False      # the launcher's window was chosen over QEMU's for remote control input
     stop_emulator = []      # ends the emulator when the display window is closed
     try:
@@ -411,9 +417,9 @@ def launch(opts):
             display = _display_plan(opts, lambda: graphics.probe_vm(qemu, None if own else kind), kind, always=rdke)
             if display and rdke_emulated:
                 display.update({"requested": "auto",
-                                "reason": "the launcher's window gets the RDK-E image's display at about 22 pictures a "
-                                          "second with host graphics acceleration, and at 60 without; "
-                                          "--graphics host asks for it all the same"})
+                                "reason": "the launcher's window gets the RDK-E image's home screen at 60 pictures a "
+                                          "second with emulated graphics, and with host graphics acceleration only "
+                                          "where QEMU is 11 or later; --graphics host asks for that"})
             display_args, display_backend, display_device = [], "none", None
             vnc = None
             if display:
@@ -425,13 +431,18 @@ def launch(opts):
                     # QEMU serves the display for the window, and the target
                     # fetches remote control keys from a port the window
                     # listens on (10.0.2.2 is this host, seen from the target).
-                    window_args, backend, shown_at, window_directory = graphics.window_endpoint(qemu, display)
+                    window_args, backend, shown_at, window_directory, window_note = graphics.window_endpoint(
+                        qemu, display, str(opts.options.get("window-display", "auto")).lower())
                     display_args += window_args
+                    if window_note:
+                        outcome.notes.append(window_note)
                     if backend:
                         display_backend = backend
                     else:
                         vnc = shown_at
+                    from_gpu = backend == graphics.DBUS_GL_DISPLAY
                     viewer_plan = {"display": shown_at, "directory": window_directory}
+                    viewer_plan["transport"] = "gpu-buffer" if from_gpu else "pixels" if backend else "vnc"
                     port = window.free_port()
                     viewer_plan["keys_listen"] = port
                     if rdke:
@@ -439,13 +450,18 @@ def launch(opts):
                         # the keys: QEMU carries them in, on a port of a
                         # virtio serial device (rdke/README.md).
                         display_args += vm.remote_port_arguments(qemu, port)
+                        viewer_plan["qemu_connects"] = True     # so the window has to listen before QEMU starts
                     else:
                         plan.kernel_settings["remote"] = "10.0.2.2:%d" % port
                 elif kind and opts.fullscreen:
                     display_args.append("-full-screen")
-                if display["screen_hold"]:
+                if display["screen_hold"] and own and from_gpu:
+                    # Only the window has the picture: it captures.
+                    capturer = window_capture = graphics.WindowCapture()
+                elif display["screen_hold"]:
                     capture_args, capturer, capture_directory = graphics.capture_endpoint(display, vnc)
                     display_args += capture_args
+                if display["screen_hold"]:
                     screens = graphics.Screens(opts.screenshot_dir, outcome.run_id, opts.screenshot_format,
                                                lambda path: capturer.capture(path, opts.screenshot_format))
             if rdke:
@@ -507,6 +523,9 @@ def launch(opts):
                 emulator["graphics"]["reason"]))
         if viewer_plan:
             emulator["display"]["input_sources"] = ["keyboard", "on-screen"]
+            if viewer_plan.get("transport"):
+                # How the window gets the display from QEMU (docs/frame-transfer.md).
+                emulator["display"]["window_transport"] = viewer_plan["transport"]
             if opts.redrat_profile:
                 emulator["display"]["input_sources"].append("redrat")
                 emulator["display"].update(redrat_profile=opts.redrat_profile, redrat_device=opts.redrat_device)
@@ -526,9 +545,19 @@ def launch(opts):
                 fullscreen=opts.fullscreen,
                 keys_exec=viewer_plan.get("keys_exec"), keys_listen=viewer_plan.get("keys_listen"),
                 redrat_profile=opts.redrat_profile, redrat_device=opts.redrat_device,
-                audio_port=plan.audio["control_port"] if plan.audio else None, control=bool(opts.on_viewer),
+                audio_port=plan.audio["control_port"] if plan.audio else None,
+                control=bool(opts.on_viewer or window_capture),
                 # A VM's display server can serve less than the display (QEMU 8.2: 2560x2048).
                 expect=(display["width"], display["height"]) if opts.mode == "vm" and display else None)
+            if viewer_plan.get("qemu_connects"):
+                window.wait_listening(viewer, viewer_plan["keys_listen"])
+            if window_capture:
+                window_capture.viewer = viewer
+            if from_gpu:
+                # QEMU (8.2.2 and 11.0.0 alike) ends on a failed assertion when a target that
+                # shuts down takes its display back from the GPU while a listener for the GPU's
+                # buffers is there. So the window lets go of the display when the workload is done.
+                outcome.on_exit = viewer.release
             if opts.on_viewer:
                 opts.on_viewer(viewer)
 
@@ -714,6 +743,8 @@ def _parse(line, outcome, ready, screens=None):
             outcome.exit_code = int(payload.strip())
         except ValueError:
             outcome.protocol_errors.append(line)
+        if outcome.on_exit:
+            outcome.on_exit()
         return
     if marker not in ("EMU-READY", "EMU-DRIVER", "EMU-WORKLOAD", "EMU-RESULT", "EMU-SCREEN"):
         return

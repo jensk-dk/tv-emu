@@ -20,7 +20,18 @@ this client, the callbacks run on the client's thread, and after on_update the
 client waits for `shown()` before it hands over the next picture. QEMU does
 not wait: pictures that arrive while the viewer draws are taken in, and the
 viewer gets the newest when it is done.
+
+A display that the host's GPU renders (QEMU's "-display dbus,p2p=yes,gl=on",
+on Linux) comes as the GPU's own buffer and not as pixels: QEMU sends a file
+descriptor of it (ScanoutDMABUF), and then says for each picture that the
+buffer has changed (UpdateDMABUF). A client with `on_buffer` gets those:
+on_buffer(buffer) with the descriptor, which is then the viewer's to close,
+and on_update(x, y, width, height, None) for each picture. QEMU holds the
+target's drawing until an UpdateDMABUF is answered, so the client answers
+when the viewer has drawn (`shown()`), or after BUFFER_WAIT seconds.
 """
+import array
+import collections
 import json
 import os
 import socket
@@ -39,6 +50,11 @@ PATH, INTERFACE, MEMBER, ERROR_NAME, REPLY_SERIAL, SIGNATURE, UNIX_FDS = 1, 2, 3
 # What QEMU's end of the picture socket may hold unsent. A socket of this kind
 # takes 8 KB at a time on macOS unless told otherwise.
 SEND_BUFFER = 8 << 20
+# How long the target's drawing is held for a viewer that does not draw (a
+# window that is hidden draws nothing).
+BUFFER_WAIT = 0.1
+# A buffer whose layout the GPU driver has not named (DRM_FORMAT_MOD_INVALID).
+NO_MODIFIER = 0x00ffffffffffffff
 
 
 class Closed(Exception):
@@ -112,6 +128,38 @@ def _header(connection):
     return kind, flags, serial, fields, body
 
 
+class _WithDescriptors:
+    """A socket whose reads keep the file descriptors that come with the
+    bytes, in `descriptors`, in the order they came."""
+
+    def __init__(self, connection):
+        self._connection = connection
+        self.descriptors = collections.deque()
+
+    def recv_into(self, view, count):
+        read, ancillary, _, _ = self._connection.recvmsg_into([view[:count]], socket.CMSG_SPACE(16 * 4))
+        for level, kind, data in ancillary:
+            if level == socket.SOL_SOCKET and kind == socket.SCM_RIGHTS:
+                found = array.array("i")
+                found.frombytes(data[:len(data) - len(data) % found.itemsize])
+                self.descriptors.extend(found)
+        return read
+
+    def recv(self, count):
+        data = bytearray(count)
+        return bytes(data[:self.recv_into(memoryview(data), count)])
+
+    def discard(self):
+        while self.descriptors:
+            try:
+                os.close(self.descriptors.popleft())
+            except OSError:
+                pass
+
+    def __getattr__(self, name):
+        return getattr(self._connection, name)
+
+
 def _authenticate(connection):
     """D-Bus's opening lines, as the user this program runs as."""
     def line():
@@ -164,12 +212,13 @@ def _hand_to_qemu(qmp_path, descriptor):
 
 
 class Client(threading.Thread):
-    def __init__(self, address, on_size, on_update, on_state=None):
+    def __init__(self, address, on_size, on_update, on_state=None, on_buffer=None):
         super().__init__(daemon=True)
         self.address = address
         self.on_size = on_size
         self.on_update = on_update
         self.on_state = on_state or (lambda text: None)
+        self.on_buffer = on_buffer
         self.connected = False
         self.size = None
         self.updates = 0
@@ -251,6 +300,8 @@ class Client(threading.Thread):
         if kind != METHOD_RETURN:
             raise Closed()
         pictures.settimeout(10)
+        if self.on_buffer is not None and hasattr(pictures, "recvmsg_into"):
+            pictures = _WithDescriptors(pictures)
         _authenticate(pictures)
         self.connected = True
         self.on_state("")
@@ -280,6 +331,29 @@ class Client(threading.Thread):
             width, height, stride, pixel_format, length = struct.unpack("<IIIII", bytes(_receive(connection, 20)))
             self._picture(connection, 0, 0, width, height, stride, pixel_format, length, whole=True)
             _receive(connection, body - 20 - length)
+        elif member == b"ScanoutDMABUF" and body >= 36 and getattr(connection, "descriptors", None):
+            # The descriptor's place among those of the message (always the
+            # first), then the buffer's layout.
+            _, width, height, stride, fourcc, modifier, y0_top = struct.unpack(
+                "<IIIIIxxxxQI", bytes(_receive(connection, 36)))
+            _receive(connection, body - 36)
+            descriptor = connection.descriptors.popleft()
+            self._frame, self._fresh = None, False
+            self._set_size(width, height)
+            self.on_buffer({"descriptor": descriptor, "width": width, "height": height, "stride": stride,
+                            "format": fourcc, "modifier": modifier,
+                            # QEMU's "y0_top" is set for a buffer whose first row is the bottom one:
+                            # its own windows turn the picture over when it is not set.
+                            "top_first": not y0_top})
+        elif member == b"UpdateDMABUF" and body >= 16:
+            x, y, width, height = struct.unpack("<iiii", bytes(_receive(connection, 16)))
+            _receive(connection, body - 16)
+            if self.on_buffer is not None:
+                self._shown.clear()
+                self.updates += 1
+                self.on_update(x, y, width, height, None)
+                self._shown.wait(BUFFER_WAIT)
+                self._shown.set()
         elif member == b"Update" and body >= 28:
             x, y, width, height, stride, pixel_format, length = struct.unpack(
                 "<iiiiIII", bytes(_receive(connection, 28)))
@@ -287,6 +361,8 @@ class Client(threading.Thread):
             _receive(connection, body - 28 - length)
         elif body:
             _receive(connection, body)
+        if hasattr(connection, "discard"):
+            connection.discard()            # descriptors of a message this client has no use for
 
     def _picture(self, connection, x, y, width, height, stride, pixel_format, length, whole):
         usable = pixel_format in PIXEL_FORMATS and width > 0 and height > 0 and stride >= width * 4 \
