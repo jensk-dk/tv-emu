@@ -373,6 +373,12 @@ def launch(opts):
                 data_disk = run_dir / "data.img"
                 with open(data_disk, "wb") as handle:
                     handle.truncate(int(opts.options.get("data-disk-mb", DEFAULT_DATA_DISK_MB)) * 1024 * 1024)
+            if opts.graphics == "host":
+                # macOS: the experimental QEMU, where it is installed and the usual one has no host graphics.
+                host.RUN_QEMU_DIR = graphics.host_graphics_qemu(vm.QEMU_BINARY[guest])
+                if host.RUN_QEMU_DIR:
+                    outcome.notes.append("--graphics host: QEMU is the experimental build in %s, since the "
+                                         "installed one cannot use the host's GPU" % host.RUN_QEMU_DIR)
             qemu = host.require_tool(vm.QEMU_BINARY[guest], "VM mode with a %s guest" % guest)
             virtio_sound = True
             if opts.drivers.get("audio") in ("emulated", "host"):
@@ -414,10 +420,7 @@ def launch(opts):
                                                                     "can show the display nowhere else"),
                                hint="leave out --option window=qemu" if asked else "add --graphics emulated")
             # RDK-E's own software draws its user interface: always a display.
-            # (A display that is captured for --screenshot comes from QEMU's VNC server, which the
-            # launcher's window on macOS has no part in.)
-            display = _display_plan(opts, lambda: graphics.probe_vm(qemu, None if own else kind,
-                                                                    launcher_window=own and not opts.screenshot_dir,
+            display = _display_plan(opts, lambda: graphics.probe_vm(qemu, None if own else kind, launcher_window=own,
                                                                     guest=guest),
                                     kind, always=rdke)
             if display and rdke_emulated:
@@ -439,6 +442,8 @@ def launch(opts):
                     display, display["width"], display["height"], opts.memory_mb, opts.options,
                     # RDK-E's compositor shows a picture each refresh of the mode it is given.
                     sixty=rdke)
+                if "venus=on" in " ".join(display_args):
+                    host.RUN_ENV.update(graphics.vulkan_environment(qemu))
                 if own:
                     # QEMU serves the display for the window, and the target
                     # fetches remote control keys from a port the window
@@ -453,6 +458,8 @@ def launch(opts):
                     else:
                         vnc = shown_at
                     from_gpu = backend == graphics.DBUS_GL_DISPLAY
+                    # macOS: QEMU read the picture back from the GPU for the window, and serves it nowhere else.
+                    window_only = from_gpu or backend == graphics.DBUS_READ_BACK_DISPLAY
                     viewer_plan = {"display": shown_at, "directory": window_directory}
                     viewer_plan["transport"] = "gpu-buffer" if from_gpu else "pixels" if backend else "vnc"
                     port = window.free_port()
@@ -467,7 +474,15 @@ def launch(opts):
                         plan.kernel_settings["remote"] = "10.0.2.2:%d" % port
                 elif kind and opts.fullscreen:
                     display_args.append("-full-screen")
-                if display["screen_hold"] and own and from_gpu:
+                # macOS, no window: QEMU's D-Bus display, which needs none, with a QEMU that reads the
+                # picture back from the GPU for a listener (a capture; nobody listens otherwise).
+                read_back = not kind and display["provider"] == "host" and graphics.dbus_read_back(qemu)
+                if read_back:
+                    display_backend = graphics.DBUS_READ_BACK_DISPLAY
+                if display["screen_hold"] and read_back:
+                    capture_args, capturer, capture_directory = graphics.read_back_capture()
+                    display_args += capture_args
+                elif display["screen_hold"] and own and window_only:
                     # Only the window has the picture: it captures.
                     capturer = window_capture = graphics.WindowCapture()
                 elif display["screen_hold"]:
@@ -637,6 +652,8 @@ def launch(opts):
             {key: value for key, value in process.items() if key != "trace"} for process in plan.host_processes]
         return outcome
     finally:
+        host.RUN_QEMU_DIR = None
+        host.RUN_ENV.clear()
         if viewer:
             viewer.close()
         if viewer_plan:

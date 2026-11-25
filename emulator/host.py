@@ -110,10 +110,15 @@ def tool_path():
     return os.pathsep.join(current + extra)
 
 
+# What a run adds to the environment of the programs it starts (QEMU's Vulkan library on macOS).
+RUN_ENV = {}
+
+
 def tool_env(extra=None):
     """Environment for child processes, so tools can find their own helpers."""
     env = dict(os.environ)
     env["PATH"] = tool_path()
+    env.update(RUN_ENV)
     env.update(extra or {})
     return env
 
@@ -124,8 +129,30 @@ def tool_env(extra=None):
 QEMU_DIR_VARIABLE = "EMU_QEMU_DIR"
 
 
+# The directory a run takes QEMU's programs from when the launcher chose another build for
+# it than the installed one (graphics.host_graphics_qemu); the variable goes before it.
+RUN_QEMU_DIR = None
+
+
+def qemu_dir_given():
+    return bool(os.environ.get(QEMU_DIR_VARIABLE, "").strip())
+
+
+def experimental_qemu_dir():
+    """macOS: the directory of the experimental QEMU that setup.sh
+    --experimental-qemu builds (Homebrew's qemu-virgl, which is not linked
+    into the PATH), or None."""
+    if host_os() != "macos":
+        return None
+    for directory in tool_path().split(os.pathsep):
+        candidate = os.path.join(os.path.dirname(directory.rstrip("/")), "opt", "qemu-virgl", "bin")
+        if os.path.isfile(os.path.join(candidate, "qemu-system-aarch64")):
+            return candidate
+    return None
+
+
 def find_tool(name):
-    directory = os.environ.get(QEMU_DIR_VARIABLE, "").strip()
+    directory = os.environ.get(QEMU_DIR_VARIABLE, "").strip() or RUN_QEMU_DIR or ""
     if directory and name.startswith("qemu-"):
         found = shutil.which(name, path=directory)
         if not found and name == "qemu-system-arm":

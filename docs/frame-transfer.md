@@ -427,10 +427,76 @@ same change in a scratch directory, with the formula's options. On
 installed it (the script found the earlier build as outdated, put the
 change into the tap and built again), and with the installed QEMU
 `rdke-rate-host` gave 60.1 pictures a second at the home screen and 60.1
-during video. Not measured: 3840x2160, a stream of 60 frames a second,
-the time of the read-back by itself, and the Debian target with this way
-(its workloads get host graphics in the launcher's window by the same rule
-now; no check of them was run with this QEMU).
+during video.
+
+Measured on 2026-11-25, one run each, in the launcher's window:
+
+| | Host GPU | Emulated |
+|---|---|---|
+| 3840x2160, OpenGL ES test (Debian image), frames drawn a second | 433 | 35 |
+| 3840x2160, Flutter, frames a second, paced by the display | 49.0 | 4.6 |
+| 1920x1080, Flutter, paced by the display | 61.0 | not taken that day |
+| RDK-E browser, a 1920x1080 clip of 60 frames a second: pictures a second in the window | 60.0 | 50.8 |
+| the same: frames the player counted a second; dropped | 59.7; none | 59.4; none |
+| the same: the VM's 6 CPUs idle | 58 % | 33 % |
+
+- **3840x2160: the read-back is not a limit.** The launcher's window got
+  122 pictures a second from the OpenGL ES test at 3840x2160 (125 at
+  1920x1080), counted at the window over 8 s. The capture of the 4K display
+  from the window is whole.
+- **What falls short at 3840x2160 is a picture drawn in memory.** Flutter
+  gets 49 to 57 frames a second there (61 at 1920x1080), and the Wayland
+  test, which draws in shared memory, is shown 62 times a second (117
+  emulated). In a profile of QEMU during the Flutter test (`sample`, 6 s,
+  53 frames a second) the main loop spent 6.6 ms a picture in
+  virglrenderer's upload of a texture from the target's memory
+  (`vrend_renderer_transfer_write_iov`, `glTexSubImage2D`) and 1.8 ms in
+  the read-back (`glReadPixels`, most of it waiting for the GPU); it was
+  idle 41 % of the time. So the cost is the target's compositor handing
+  the host a full picture from memory each frame. Why the Flutter
+  application's picture takes that way, when it draws with the GPU, was
+  not looked for. This corrects the first reading of the same day, which
+  suspected the read-back.
+- **A stream of 60 frames a second** reaches the window whole with the
+  host's GPU. The clip was made for this (FFmpeg's test picture, H.264,
+  8 Mbit/s), copied into the target and played by the browser's own
+  player; the player's count is of frames it handed on, not of what the
+  window got.
+- **The Debian target on this way** is checked now: `graphics-host-vm`
+  runs in the launcher's window where only that has the picture, with
+  captures taken from the window (`--screenshot` works the same way).
+- **The launcher takes the experimental QEMU by itself** for a run with
+  `--graphics host`, where the installed QEMU has no host graphics
+  (`host_graphics_qemu` in [emulator/graphics.py](../emulator/graphics.py));
+  other runs keep the installed one.
+- **Vulkan (Venus on MoltenVK) does not work with the target as it is.**
+  With `--option venus=yes` QEMU starts and the renderer opens MoltenVK
+  (the launcher has to name its directory to QEMU; macOS takes such a
+  variable out of the environment of its own Python), then QEMU reports
+  that mapping a shared buffer failed and the target's `vkCreateInstance`
+  returns an error. The tap's notes say why: 16 KB pages on the host, 4 KB
+  in the target, and a Vulkan driver in the target that has to align its
+  buffers to 16 KB, which needs a Mesa change that is not in Mesa.
+- **With a kernel of 16 KB pages the target reaches the Apple GPU through
+  Vulkan, and still cannot show a picture with it.** A copy of the target
+  image with Debian's `linux-image-arm64-16k`, built in a scratch
+  directory, lists "Virtio-GPU Venus (Apple M6)" as a Vulkan device, and
+  OpenGL ES and Flutter run on it as before. The Vulkan test fails at
+  `vkCreateDevice` (`VK_ERROR_EXTENSION_NOT_PRESENT`): the device has 78
+  extensions and `VK_KHR_swapchain` is not one. Mesa's driver offers it
+  only where the host's Vulkan can share buffers the Linux way
+  (dma-buf), which MoltenVK cannot. So a changed Mesa in the target is
+  needed in any case; the tap's author has one, not tried here.
+- **Without a window** the host's GPU works as well now: `-display
+  dbus,p2p=yes,gl=es` needs no window, and for a capture the launcher
+  attaches a listener of its own (`ReadBackCapture` in
+  [emulator/graphics.py](../emulator/graphics.py)), so that QEMU reads
+  the picture back. With nothing to capture nobody listens and nothing is
+  read back.
+- **Faults seen earlier in QEMU's own window are gone on this way**: the
+  HEVC stream loses no frame on a host-native target (0 of 125 through
+  Wayland, OpenGL ES and Vulkan, three runs), and on a simulated ARM64
+  target it ends, with none lost through OpenGL ES.
 
 ## Read in the source, not run
 

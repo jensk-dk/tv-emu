@@ -591,7 +591,7 @@ check_experimental_qemu() {
     case "$version" in
       *"-g$EXP_QEMU_COMMIT"*)
         if experimental_qemu_current "$bin"; then
-          ok "experimental QEMU with host graphics for VM mode: ${version#QEMU emulator version }; the launcher uses it when EMU_QEMU_DIR=$(dirname "$bin")"
+          ok "experimental QEMU with host graphics for VM mode: ${version#QEMU emulator version }; the launcher takes it for a run with --graphics host (it is in $(dirname "$bin"))"
         elif [ "$EXPERIMENTAL_QEMU" = 1 ]; then
           optional experimental-qemu "experimental QEMU: the build in $(dirname "$bin") is from before this project's change to it, with which the launcher's window shows host graphics; it is built again"
         else
@@ -1885,7 +1885,7 @@ elif [ "$OS" = Darwin ]; then
     info "The experimental QEMU is third-party software. Homebrew is told to trust the tap"
     info "$EXP_TAP and builds QEMU, ANGLE, virglrenderer and libepoxy from"
     info "source, which needs the Xcode app and takes some minutes. The build is installed"
-    info "beside Homebrew's QEMU, and the launcher uses it only when EMU_QEMU_DIR names it."
+    info "beside Homebrew's QEMU, and the launcher uses it only for a run with --graphics host."
   fi
 else
   [ -z "$MISSING" ] && [ "$(echo $OPTIONAL)" = experimental-qemu ] ||
