@@ -609,12 +609,12 @@
         "AC-3: played on the target in 3.1 s; its 660 Hz tone reached the host-side process and was recorded at the host's sound server",
         "AAC: played on the target in 3.1 s; its 880 Hz tone reached the host-side process and was recorded at the host's sound server",
         "HE-AAC: played on the target in 3.1, 3.1 s; its 1100 Hz tone reached the host-side process and was recorded at the host's sound server",
-        "path: target ALSA device (host:host.docker.internal:34125) -> the target's shim device, over TCP -> the host's player program (pacat)"
+        "path: target ALSA device (host:host.docker.internal:40195) -> the target's shim device, over TCP -> the host's player program (pacat)"
       ],
-      "checked_at": "2026-11-25T18:18:51Z",
-      "seconds": 19.2,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "checked_at": "2026-11-25T21:02:58Z",
+      "seconds": 19.3,
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "audio-mute-container": {
       "status": "pass",
@@ -624,10 +624,10 @@
         "while the target played a 880 Hz tone for 7.0 s, the sound sent to the host was: sound for 1.6 s, silent for 1.9 s, sound for 3.5 s",
         "recorded at the host's sound server: the tone, 2.1 s of silence, the tone again"
       ],
-      "checked_at": "2026-11-25T18:22:20Z",
-      "seconds": 8.9,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "checked_at": "2026-11-25T21:06:30Z",
+      "seconds": 9.0,
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "audio-strategies-container": {
       "status": "pass",
@@ -637,10 +637,10 @@
         "emulated: 2 s of sound played in 2.1 s on model:emu-sndcard-1 (48 kHz stereo, plays to nowhere); no host-side process ran",
         "mocked: 2 s of sound played in 2.1 s on mock:discard; no host-side process ran"
       ],
-      "checked_at": "2026-11-25T18:22:27Z",
-      "seconds": 6.6,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "checked_at": "2026-11-25T21:06:37Z",
+      "seconds": 6.7,
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "video-wayland-container": {
       "status": "pass",
@@ -667,10 +667,10 @@
         "HEVC from MSE-style fragments: played on llvmpipe (LLVM 19.1.7, 256 bits), 0 of 125 frames dropped; a capture of the display shows the video",
         "graphics provider: emulated; sound: the target's audio device"
       ],
-      "checked_at": "2026-11-25T18:18:32Z",
+      "checked_at": "2026-11-25T21:02:38Z",
       "seconds": 0.0,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "video-vulkan-container": {
       "status": "pass",
@@ -682,38 +682,38 @@
         "HEVC from MSE-style fragments: played on llvmpipe (LLVM 19.1.7, 256 bits), 0 of 125 frames dropped; a capture of the display shows the video",
         "graphics provider: emulated; sound: the target's audio device"
       ],
-      "checked_at": "2026-11-25T18:18:32Z",
+      "checked_at": "2026-11-25T21:02:38Z",
       "seconds": 0.0,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "video-flutter-container": {
       "status": "pass",
       "task": "5.3",
       "description": "decoded video is rendered through Flutter in container mode",
       "details": [
-        "MPEG-2 from MP2TS: played on llvmpipe (LLVM 19.1.7, 256 bits), 92 of 125 frames dropped; a capture of the display shows the video",
+        "MPEG-2 from MP2TS: played on llvmpipe (LLVM 19.1.7, 256 bits), 91 of 125 frames dropped; a capture of the display shows the video",
         "AVC from MP4: played on llvmpipe (LLVM 19.1.7, 256 bits), 85 of 125 frames dropped; a capture of the display shows the video",
-        "HEVC from MSE-style fragments: played on llvmpipe (LLVM 19.1.7, 256 bits), 84 of 125 frames dropped; a capture of the display shows the video",
+        "HEVC from MSE-style fragments: played on llvmpipe (LLVM 19.1.7, 256 bits), 81 of 125 frames dropped; a capture of the display shows the video",
         "graphics provider: emulated; sound: the target's audio device"
       ],
-      "checked_at": "2026-11-25T18:18:32Z",
+      "checked_at": "2026-11-25T21:02:39Z",
       "seconds": 0.0,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "audio-strategies-vm": {
       "status": "pass",
       "task": "3.2, 5.3",
       "description": "the emulated and mocked audio devices in VM mode",
       "details": [
-        "emulated: 2 s of sound played in 4.8 s on kernel:virtio-snd - VirtIO SoundCard; no host-side process ran",
+        "emulated: 2 s of sound played in 5.0 s on kernel:virtio-snd - VirtIO SoundCard; no host-side process ran",
         "mocked: 2 s of sound played in 2.1 s on mock:discard; no host-side process ran"
       ],
-      "checked_at": "2026-11-25T18:22:55Z",
-      "seconds": 13.8,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "checked_at": "2026-11-25T21:07:05Z",
+      "seconds": 14.1,
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "audio-host-vm": {
       "status": "pass",
@@ -726,23 +726,23 @@
         "HE-AAC: played on the target in 5.9, 5.9 s; its 1100 Hz tone reached the host-side process and was recorded at the host's sound server",
         "path: target ALSA device (kernel:virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe -> the host's player program (pacat)"
       ],
-      "checked_at": "2026-11-25T18:19:27Z",
-      "seconds": 35.5,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "checked_at": "2026-11-25T21:03:34Z",
+      "seconds": 35.7,
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "audio-mute-vm": {
       "status": "pass",
       "task": "5.3",
       "description": "audio is muted and unmuted while it plays, in VM mode",
       "details": [
-        "while the target played a 880 Hz tone for 6.8 s, the sound sent to the host was: sound for 1.6 s, silent for 1.9 s, sound for 3.3 s",
+        "while the target played a 880 Hz tone for 6.8 s, the sound sent to the host was: sound for 1.6 s, silent for 1.8 s, sound for 3.4 s",
         "recorded at the host's sound server: the tone, 2.1 s of silence, the tone again"
       ],
-      "checked_at": "2026-11-25T18:22:41Z",
-      "seconds": 14.1,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "checked_at": "2026-11-25T21:06:51Z",
+      "seconds": 14.0,
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "media-input-vm": {
       "status": "pass",
@@ -802,9 +802,9 @@
         "HEVC from MSE-style fragments: played on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2), 0 of 125 frames dropped; a capture of the display shows the video",
         "graphics provider: host; sound: the target's audio device"
       ],
-      "checked_at": "2026-11-25T20:29:29Z",
+      "checked_at": "2026-11-25T21:02:38Z",
       "seconds": 0.0,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
       "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "video-vulkan-vm": {
@@ -817,9 +817,9 @@
         "HEVC from MSE-style fragments: played on Virtio-GPU Venus (NVIDIA GeForce RTX 4070), 0 of 125 frames dropped; a capture of the display shows the video",
         "graphics provider: host; sound: the target's audio device"
       ],
-      "checked_at": "2026-11-25T20:29:29Z",
+      "checked_at": "2026-11-25T21:02:38Z",
       "seconds": 0.0,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
       "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "video-flutter-vm": {
@@ -827,14 +827,14 @@
       "task": "5.3",
       "description": "decoded video is rendered through Flutter in a host-native VM",
       "details": [
-        "MPEG-2 from MP2TS: played on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2), 88 of 125 frames dropped; a capture of the display shows the video",
-        "AVC from MP4: played on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2), 85 of 125 frames dropped; a capture of the display shows the video",
-        "HEVC from MSE-style fragments: played on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2), 85 of 125 frames dropped; a capture of the display shows the video",
+        "MPEG-2 from MP2TS: played on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2), 82 of 125 frames dropped; a capture of the display shows the video",
+        "AVC from MP4: played on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2), 78 of 125 frames dropped; a capture of the display shows the video",
+        "HEVC from MSE-style fragments: played on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2), 75 of 125 frames dropped; a capture of the display shows the video",
         "graphics provider: host; sound: the target's audio device"
       ],
-      "checked_at": "2026-11-25T20:29:29Z",
+      "checked_at": "2026-11-25T21:02:39Z",
       "seconds": 0.0,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
       "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "media-input-vm-arm64": {
@@ -923,54 +923,60 @@
       "task": "5.3",
       "description": "decoded video is rendered through Wayland in an ARM32 VM",
       "details": [
-        "MPEG-2 from MP2TS: played on cpu, 105 of 125 frames dropped; a capture of the display shows the video",
-        "AVC from MP4: played on cpu, 106 of 125 frames dropped; a capture of the display shows the video (the display service ended during the first attempt and was started again)",
-        "HEVC from MSE-style fragments: played on cpu, 100 of 125 frames dropped; a capture of the display shows the video",
+        "MPEG-2 from MP2TS: played on cpu, 106 of 125 frames dropped; a capture of the display shows the video",
+        "AVC from MP4: played on cpu, 98 of 125 frames dropped; a capture of the display shows the video (the display service ended during the first attempt and was started again)",
+        "HEVC from MSE-style fragments: played on cpu, 97 of 125 frames dropped; a capture of the display shows the video",
         "graphics provider: host; sound: the target's audio device"
       ],
-      "checked_at": "2026-11-25T20:27:00Z",
-      "seconds": 219.7,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
+      "checked_at": "2026-11-25T21:02:38Z",
+      "seconds": 242.2,
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
       "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "video-gles-vm-arm64": {
-      "status": "fail",
+      "status": "pass",
       "task": "5.3",
       "description": "decoded video is rendered through OpenGL ES in an ARM64 VM",
       "details": [
-        "avc-mp4/gles: technology marker is (252, 127, 0), expected (0, 200, 255)"
+        "MPEG-2 from MP2TS: played on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2), 0 of 125 frames dropped; a capture of the display shows the video",
+        "AVC from MP4: played on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2), 0 of 125 frames dropped; a capture of the display shows the video",
+        "HEVC from MSE-style fragments: played on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2), 0 of 125 frames dropped; a capture of the display shows the video",
+        "graphics provider: host; sound: the target's audio device"
       ],
-      "checked_at": "2026-11-25T18:18:32Z",
+      "checked_at": "2026-11-25T21:02:38Z",
       "seconds": 0.0,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "video-gles-vm-arm32": {
       "status": "pass",
       "task": "5.3",
       "description": "decoded video is rendered through OpenGL ES in an ARM32 VM",
       "details": [
-        "MPEG-2 from MP2TS: played on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2), 0 of 125 frames dropped; a capture of the display shows the video",
-        "AVC from MP4: played on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2), 1 of 125 frames dropped; a capture of the display shows the video (the display service ended during the first attempt and was started again)",
+        "MPEG-2 from MP2TS: played on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2), 0 of 125 frames dropped; a capture of the display shows the video (the display service ended during the first attempt and was started again)",
+        "AVC from MP4: played on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2), 0 of 125 frames dropped; a capture of the display shows the video",
         "HEVC from MSE-style fragments: played on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2), 0 of 125 frames dropped; a capture of the display shows the video (the display service ended during the first attempt and was started again)",
         "graphics provider: host; sound: the target's audio device"
       ],
-      "checked_at": "2026-11-25T20:27:00Z",
+      "checked_at": "2026-11-25T21:02:38Z",
       "seconds": 0.0,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
       "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "video-vulkan-vm-arm64": {
-      "status": "fail",
+      "status": "pass",
       "task": "5.3",
       "description": "decoded video is rendered through Vulkan in an ARM64 VM",
       "details": [
-        "mpeg2-mp2ts/vulkan was not played: [Errno 104] Connection reset by peer"
+        "MPEG-2 from MP2TS: played on Virtio-GPU Venus (NVIDIA GeForce RTX 4070), 0 of 125 frames dropped; a capture of the display shows the video",
+        "AVC from MP4: played on Virtio-GPU Venus (NVIDIA GeForce RTX 4070), 0 of 125 frames dropped; a capture of the display shows the video",
+        "HEVC from MSE-style fragments: played on Virtio-GPU Venus (NVIDIA GeForce RTX 4070), 0 of 125 frames dropped; a capture of the display shows the video",
+        "graphics provider: host; sound: the target's audio device"
       ],
-      "checked_at": "2026-11-25T18:18:32Z",
+      "checked_at": "2026-11-25T21:02:38Z",
       "seconds": 0.0,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "video-vulkan-vm-arm32": {
       "status": "fail",
@@ -979,22 +985,25 @@
       "details": [
         "mpeg2-mp2ts/vulkan was not played: the player closed its control connection"
       ],
-      "checked_at": "2026-11-25T20:27:00Z",
+      "checked_at": "2026-11-25T21:02:38Z",
       "seconds": 0.0,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
       "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "video-flutter-vm-arm64": {
-      "status": "fail",
+      "status": "pass",
       "task": "5.3",
       "description": "decoded video is rendered through Flutter in an ARM64 VM",
       "details": [
-        "avc-mp4/flutter: technology marker is (252, 127, 0), expected (0, 200, 255)"
+        "MPEG-2 from MP2TS: played on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2), 48 of 125 frames dropped; a capture of the display shows the video",
+        "AVC from MP4: played on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2), 38 of 125 frames dropped; a capture of the display shows the video",
+        "HEVC from MSE-style fragments: played on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2), 41 of 125 frames dropped; a capture of the display shows the video",
+        "graphics provider: host; sound: the target's audio device"
       ],
-      "checked_at": "2026-11-25T18:18:32Z",
+      "checked_at": "2026-11-25T21:02:39Z",
       "seconds": 0.0,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "video-flutter-vm-arm32": {
       "status": "fail",
@@ -1003,42 +1012,42 @@
       "details": [
         "the arm32 target image has no Flutter application: the Flutter SDK (3.47.9) builds Linux applications for x86_64 and arm64 only"
       ],
-      "checked_at": "2026-11-25T18:18:32Z",
+      "checked_at": "2026-11-25T21:02:39Z",
       "seconds": 0.0,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "audio-host-vm-arm64": {
       "status": "pass",
       "task": "5.3",
       "description": "decoded audio is played through the host OS, from an ARM64 VM",
       "details": [
-        "MP2: played on the target in 9.1 s; its 440 Hz tone reached the host-side process and was recorded at the host's sound server",
-        "AC-3: played on the target in 9.2 s; its 660 Hz tone reached the host-side process and was recorded at the host's sound server",
-        "AAC: played on the target in 9.0 s; its 880 Hz tone reached the host-side process and was recorded at the host's sound server",
+        "MP2: played on the target in 9.2 s; its 440 Hz tone reached the host-side process and was recorded at the host's sound server",
+        "AC-3: played on the target in 9.0 s; its 660 Hz tone reached the host-side process and was recorded at the host's sound server",
+        "AAC: played on the target in 8.9 s; its 880 Hz tone reached the host-side process and was recorded at the host's sound server",
         "HE-AAC: played on the target in 9.0, 9.0 s; its 1100 Hz tone reached the host-side process and was recorded at the host's sound server",
         "path: target ALSA device (kernel:virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe -> the host's player program (pacat)"
       ],
-      "checked_at": "2026-11-25T18:20:41Z",
-      "seconds": 74.1,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "checked_at": "2026-11-25T21:04:48Z",
+      "seconds": 74.2,
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "audio-host-vm-arm32": {
       "status": "pass",
       "task": "5.3",
       "description": "decoded audio is played through the host OS, from an ARM32 VM",
       "details": [
-        "MP2: played on the target in 8.3 s; its 440 Hz tone reached the host-side process and was recorded at the host's sound server",
-        "AC-3: played on the target in 8.1 s; its 660 Hz tone reached the host-side process and was recorded at the host's sound server",
-        "AAC: played on the target in 8.2 s; its 880 Hz tone reached the host-side process and was recorded at the host's sound server",
+        "MP2: played on the target in 8.9 s; its 440 Hz tone reached the host-side process and was recorded at the host's sound server",
+        "AC-3: played on the target in 8.5 s; its 660 Hz tone reached the host-side process and was recorded at the host's sound server",
+        "AAC: played on the target in 8.4 s; its 880 Hz tone reached the host-side process and was recorded at the host's sound server",
         "HE-AAC: played on the target in 8.2, 8.2 s; its 1100 Hz tone reached the host-side process and was recorded at the host's sound server",
         "path: target ALSA device (kernel:virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe -> the host's player program (pacat)"
       ],
-      "checked_at": "2026-11-25T18:22:11Z",
-      "seconds": 90.4,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "checked_at": "2026-11-25T21:06:21Z",
+      "seconds": 93.2,
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "settings-window": {
       "status": "pass",
@@ -1074,14 +1083,14 @@
       "task": "6.1",
       "description": "WPE WebKit launches in container mode",
       "details": [
-        "WPE WebKit 2.48.3 (Cog 0.18.4) started, loaded a page and ran its script in 4.3 s; a capture of the display shows the page, full screen at 1280x720",
+        "WPE WebKit 2.48.3 (Cog 0.18.4) started, loaded a page and ran its script in 4.4 s; a capture of the display shows the page, full screen at 1280x720",
         "Media Source Extensions: available; drawn on llvmpipe (LLVM 19.1.7, 256 bits)",
         "graphics provider: emulated"
       ],
-      "checked_at": "2026-11-25T18:23:23Z",
+      "checked_at": "2026-11-25T21:07:33Z",
       "seconds": 6.5,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "window-display-container": {
       "status": "pass",
@@ -1118,28 +1127,28 @@
       "task": "6.1",
       "description": "WPE WebKit launches in a host-native VM",
       "details": [
-        "WPE WebKit 2.48.3 (Cog 0.18.4) started, loaded a page and ran its script in 4.4 s; a capture of the display shows the page, full screen at 1280x720",
+        "WPE WebKit 2.48.3 (Cog 0.18.4) started, loaded a page and ran its script in 4.5 s; a capture of the display shows the page, full screen at 1280x720",
         "Media Source Extensions: available; drawn on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2)",
         "graphics provider: host"
       ],
-      "checked_at": "2026-11-25T18:23:32Z",
-      "seconds": 8.7,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "checked_at": "2026-11-25T21:07:42Z",
+      "seconds": 8.9,
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "web-launch-vm-arm64": {
       "status": "pass",
       "task": "6.1",
       "description": "WPE WebKit launches in an ARM64 VM",
       "details": [
-        "WPE WebKit 2.48.3 (Cog 0.18.4) started, loaded a page and ran its script in 13.5 s; a capture of the display shows the page, full screen at 1280x720",
+        "WPE WebKit 2.48.3 (Cog 0.18.4) started, loaded a page and ran its script in 14.5 s; a capture of the display shows the page, full screen at 1280x720",
         "Media Source Extensions: available; drawn on virgl (NVIDIA GeForce RTX 4070/PCIe/SSE2)",
         "graphics provider: host"
       ],
-      "checked_at": "2026-11-25T18:24:13Z",
-      "seconds": 41.2,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "checked_at": "2026-11-25T21:08:26Z",
+      "seconds": 43.1,
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "web-launch-vm-arm32": {
       "status": "pass",
@@ -1884,28 +1893,28 @@
       "details": [
         "started with the mute setting, the run was muted from its first sound: while the target played a 880 Hz tone for 7.0 s, the sound sent on to the host was: silent for 1.7 s, sound for 2.1 s, silent for 3.2 s",
         "the launcher's audio command, for this run by its id: state \"muted\"; toggle, \"not muted\"; toggle, \"muted\"; state \"muted\"",
-        "its last answer: muted; 4.8 s of sound received, 2.1 s played, 2.8 s muted",
-        "after the run had ended the command reported failure: emu: no running emulator has audio routed through the host (run 20261125T182255Z-7e02e1)"
+        "its last answer: muted; 4.9 s of sound received, 2.1 s played, 2.8 s muted",
+        "after the run had ended the command reported failure: emu: no running emulator has audio routed through the host (run 20261125T210705Z-b725e9)"
       ],
-      "checked_at": "2026-11-25T18:23:03Z",
+      "checked_at": "2026-11-25T21:07:13Z",
       "seconds": 8.4,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "audio-switch-vm": {
       "status": "pass",
       "task": "9.2",
       "description": "a run starts muted, and the audio command toggles it and says its state, in VM mode",
       "details": [
-        "started with the mute setting, the run was muted from its first sound: while the target played a 880 Hz tone for 6.8 s, the sound sent on to the host was: silent for 1.7 s, sound for 2.1 s, silent for 3.0 s",
+        "started with the mute setting, the run was muted from its first sound: while the target played a 880 Hz tone for 6.8 s, the sound sent on to the host was: silent for 1.7 s, sound for 2.2 s, silent for 2.9 s",
         "the launcher's audio command, for this run by its id: state \"muted\"; toggle, \"not muted\"; toggle, \"muted\"; state \"muted\"",
-        "its last answer: muted; 4.9 s of sound received, 2.0 s played, 2.8 s muted",
-        "after the run had ended the command reported failure: emu: no running emulator has audio routed through the host (run 20261125T182303Z-bedf51)"
+        "its last answer: muted; 4.9 s of sound received, 2.1 s played, 2.8 s muted",
+        "after the run had ended the command reported failure: emu: no running emulator has audio routed through the host (run 20261125T210713Z-67bc2d)"
       ],
-      "checked_at": "2026-11-25T18:23:17Z",
+      "checked_at": "2026-11-25T21:07:27Z",
       "seconds": 13.5,
-      "revision": "f353075a8a1c90e8a2b80c5e0fd96b2dfaafddd1-dirty",
-      "image_definition_sha256": "7f22e737c9570eb58ee6145755a42dae19214a6c46c1093d7082a0eb30b9b0ee"
+      "revision": "f2a338bb4576c9b96e46003b522efeb50dc75feb",
+      "image_definition_sha256": "16c6885c32683a75a97ec694fa7d99afc3b0303e12fa2d372f3a9cdf392b49d4"
     },
     "window-buttons-container": {
       "status": "pass",
