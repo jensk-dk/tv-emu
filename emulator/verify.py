@@ -258,12 +258,14 @@ _demo_runs = {}
 cut_runs = set()        # runs whose display capture showed only part of the display
 
 
-def _demo(mode, arch, resolution, provider=None):
+def _demo(mode, arch, resolution, provider=None, window=False):
     """Run the graphics demo once per configuration and evaluate every test:
     it produced a frame rate at the selected resolution, and a capture of the
     emulator's display shows the frame it drew. Returns (emulator record,
-    {technology: (problem or None, summary line, result)})."""
-    key = (mode, arch, resolution, provider)
+    {technology: (problem or None, summary line, result)}). With `window`
+    the display is in the launcher's window, which the capture then comes
+    from where only the window has the picture."""
+    key = (mode, arch, resolution, provider) + (("window",) if window else ())
     if key in _demo_runs:
         return _demo_runs[key]
     width, height = graphics.resolution(resolution)
@@ -271,7 +273,7 @@ def _demo(mode, arch, resolution, provider=None):
     with tempfile.TemporaryDirectory(prefix="emu-verify-") as shots:
         opts, outcome = _run(mode=mode, arch=arch, workload="graphics-demo", args=["--seconds", "1"],
                              resolution=resolution, graphics=provider, screenshot_dir=shots,
-                             screenshot_format="ppm", timeout=3600)
+                             screenshot_format="ppm", timeout=3600, window=window)
         evaluation = {}
         for technology in technologies:
             result = next((r for r in outcome.results if r.get("technology") == technology), None)
@@ -307,8 +309,8 @@ def _demo(mode, arch, resolution, provider=None):
     return _demo_runs[key]
 
 
-def _technologies(mode, arch, resolution, technologies, provider=None):
-    emulator, evaluation = _demo(mode, arch, resolution, provider)
+def _technologies(mode, arch, resolution, technologies, provider=None, window=False):
+    emulator, evaluation = _demo(mode, arch, resolution, provider, window)
     lines = []
     for technology in technologies:
         problem, line, _ = evaluation[technology]
@@ -398,6 +400,11 @@ def _graphics_emulated(mode):
 def _graphics_host(mode):
     """Graphics are mapped to host acceleration, and auto prefers it."""
     probe = _probe(mode)
+    # macOS: the QEMU with host graphics is another build than the installed one
+    # (graphics.host_graphics_qemu), which a run takes when it asks for the host's GPU.
+    window = False
+    if mode == "vm" and not probe["available"]:
+        probe = graphics.probe_vm(graphics.host_graphics_binary(vm.QEMU_BINARY[host.host_arch()]))
     if not probe["available"]:
         # Asking for host acceleration must be refused, not silently emulated.
         try:
@@ -405,17 +412,28 @@ def _graphics_host(mode):
         except EmuError as error:
             raise CheckUnavailable("%s. Asking for it is refused: %s" % (probe["reason"], error))
         raise CheckFailed("--graphics host was accepted although this host has no host graphics acceleration")
-    emulator, evaluation, lines = _technologies(mode, "native", "720p", ("gles",), provider="host")
+    emulator, evaluation, lines = _technologies(mode, "native", "720p", ("gles",), provider="host", window=window)
     _require(emulator["graphics"]["provider"] == "host", "host acceleration was requested but not selected")
     _require(evaluation["gles"][2].get("accelerated") is True,
              "OpenGL ES was not rendered by the host GPU: %s" % evaluation["gles"][2].get("renderer"))
-    auto, auto_evaluation, _ = _technologies(mode, "native", "720p", ("gles",))
-    _require(auto["graphics"]["provider"] == "host", "auto did not prefer the available host acceleration")
-    _require(auto_evaluation["gles"][2].get("accelerated") is True, "auto chose host acceleration but OpenGL ES "
-             "was rendered by %s" % auto_evaluation["gles"][2].get("renderer"))
+    # macOS: the QEMU with host graphics is another build than the installed one, which a run takes
+    # only when it asks for the host's GPU. Unasked, the installed QEMU emulates.
+    on_request = mode == "vm" and graphics.host_graphics_qemu(vm.QEMU_BINARY[host.host_arch()])
+    auto, auto_evaluation, _ = _technologies(mode, "native", "720p", ("gles",), window=window)
+    if on_request:
+        _require(auto["graphics"]["provider"] == "emulated", "a run that does not ask for the host's GPU got %r "
+                 "although the installed QEMU has no host graphics" % auto["graphics"]["provider"])
+    else:
+        _require(auto["graphics"]["provider"] == "host", "auto did not prefer the available host acceleration")
+        _require(auto_evaluation["gles"][2].get("accelerated") is True, "auto chose host acceleration but OpenGL ES "
+                 "was rendered by %s" % auto_evaluation["gles"][2].get("renderer"))
     vulkan = evaluation.get("vulkan", (None, None, {}))[2] or {}
     lines.append("Vulkan: %s" % ("on the host GPU (%s)" % vulkan.get("renderer") if vulkan.get("accelerated")
                                  else "rendered by the target CPU (%s)" % vulkan.get("renderer")))
+    if on_request:
+        return ["requested host acceleration: " + line for line in lines] + [
+            "the QEMU for it is the experimental build in %s, which a run takes only when it asks for the host's "
+            "GPU; unasked, the installed QEMU emulates: %s" % (on_request, auto["graphics"]["reason"])]
     return ["requested host acceleration: " + line for line in lines] + ["auto preferred host acceleration: "
                                                                         + auto["graphics"]["reason"]]
 
@@ -2953,7 +2971,7 @@ def _rdke_session(body, options=None, on_audio=None, graphics=None):
     with os.fdopen(reader, "rb", buffering=0) as source:
         if graphics == "host":
             # Asked of the QEMU this run would use, before anything is started.
-            binary = host.find_tool(vm.QEMU_BINARY[guest])
+            binary = host_graphics_binary(vm.QEMU_BINARY[guest])
             found = graphics_probe(binary)
             if not found["available"]:
                 raise CheckUnavailable("this host's QEMU (%s) does not show the launcher's window a display that "
@@ -3407,8 +3425,8 @@ def check_rdke_device():
         call("serial", "org.rdk.System.1.getSerialNumber")
         call("make", "DeviceInfo.1.make")
         call("model", "DeviceInfo.1.modelid")
-        # The power manager starts in standby and is switched on during the start-up; seen once as STANDBY
-        # right after the display settings service answered (2026-11-25).
+        # Seen as STANDBY in two full runs of the checks (2026-11-25), the second time for all of
+        # the 60 s waited here; alone and after rdke-health or rdke-aamp the check gets ON. Cause not known.
         asked_at = time.monotonic()
         _wait(lambda: call("power", "org.rdk.System.1.getPowerState") or
               (seen["power"] or {}).get("powerState") == "ON", 60 * slow, 2)
@@ -3468,6 +3486,11 @@ def graphics_probe(binary):
     """Whether this QEMU gives the launcher's own window a display that the
     host's GPU draws."""
     return graphics.probe_vm(binary, launcher_window=True)
+
+
+def host_graphics_binary(name):
+    """The QEMU that a run asking for the host's GPU uses (for where `graphics` is a parameter)."""
+    return graphics.host_graphics_binary(name)
 
 
 def check_rdke_rate():

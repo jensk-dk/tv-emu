@@ -832,10 +832,18 @@ To remove only the build (Homebrew does not uninstall a pinned package):
     brew untap milesbuckton/qemu-virgl
     brew untrust --tap milesbuckton/qemu-virgl
 
-The build installs beside Homebrew's QEMU. The launcher uses it when the
-environment variable `EMU_QEMU_DIR` names its directory; that variable works
-for any other QEMU build too. A build that has only the ARM64 emulator, as
-this one, then runs ARM32 targets as well.
+The build installs beside Homebrew's QEMU. Since 2026-11-25 the launcher
+takes it by itself for a run that asks for the host's GPU, where the
+installed QEMU has no host graphics; `./emu doctor` names it, and the run
+says so. Every other run keeps the installed QEMU, which is what the host
+is evaluated with: `--graphics auto` emulates as before.
+
+    ./emu run --mode vm --workload graphics-demo --graphics host --window
+
+The environment variable `EMU_QEMU_DIR` names a directory to take QEMU from
+for every run, this build's or any other's; where it is set the launcher
+chooses nothing itself. A build that has only the ARM64 emulator, as this
+one, then runs ARM32 targets as well.
 
     EMU_QEMU_DIR=/opt/homebrew/opt/qemu-virgl/bin ./emu run --mode vm --workload graphics-demo --window
 
@@ -851,6 +859,67 @@ What was seen, in single runs that were not recorded as results:
   scratch directory. On 2026-11-25 `./setup.sh --experimental-qemu` built
   and installed it through Homebrew, and with that build the check gave
   60.1 and 60.1.
+- Since 2026-11-25 the Debian image's workloads are checked on this way
+  (`./emu verify graphics-host-vm`), and `--screenshot` works with it:
+  the capture is taken from the window, or without a window from QEMU's
+  D-Bus display (below).
+- Measured on 2026-11-25, one run each, host graphics against emulated, in
+  the launcher's window:
+
+  | | Host GPU | Emulated |
+  |---|---|---|
+  | 4K, OpenGL ES test, frames drawn a second | 433 | 35 |
+  | 4K, Flutter, frames a second (paced by the display) | 49.0 | 4.6 |
+  | RDK-E browser, 1080p clip of 60 frames a second: pictures a second in the window | 60.0 | 50.8 |
+  | the same: frames the player counted a second, and dropped | 59.7, none | 59.4, none |
+  | the same: the VM's 6 CPUs idle | 58 % | 33 % |
+
+  So at 4K the Flutter test falls short of 60 with the host's GPU (49 to
+  57 in three runs). The read-back is not why, as first suspected: the
+  launcher's window got 122 pictures a second from the OpenGL ES test at
+  4K. What costs is a picture that a program draws in its own memory and
+  the target's compositor has to hand to the host's GPU each frame: in a
+  profile of QEMU at 4K that upload took 6.6 ms a picture and the read-back
+  1.8 ms. The Wayland test, which draws in memory, gets 62 pictures a
+  second at 4K the same way. Why the Flutter application's picture goes
+  that way was not looked for.
+- Vulkan on the host's GPU does not work with the target image as it is
+  (2026-11-25, `--option venus=yes`). QEMU starts, the renderer opens
+  MoltenVK once the launcher names its directory to QEMU, and then the
+  target's `vkCreateInstance` fails while QEMU reports a failed mapping of
+  a shared buffer. The tap's notes describe this: the host has 16 KB pages
+  and the target 4 KB, and the target's Vulkan driver (Mesa's Venus) has to
+  align its buffers to 16 KB, which only a patched Mesa does (a change not
+  in Mesa yet). The option stays off on macOS unless asked for.
+  Tried the same day with Debian's kernel for 16 KB pages
+  (`linux-image-arm64-16k`) in a copy of the target image, built in a
+  scratch directory: the target then lists the Apple GPU as a Vulkan device
+  ("Virtio-GPU Venus (Apple M6)"), and the image's other graphics tests run
+  as before. The Vulkan test still fails, at `vkCreateDevice`: that device
+  has no `VK_KHR_swapchain`, so a program cannot show what it draws with
+  it. Mesa's driver offers the swapchain only where the host's Vulkan
+  shares buffers as Linux does, which MoltenVK does not. So Vulkan on the
+  host's GPU needs a changed Mesa in the target on top of the kernel; the
+  tap's author keeps such a Mesa, which was not tried.
+- Since 2026-11-25 the host's GPU also works without a window: QEMU's
+  D-Bus display needs none, and a capture (`--screenshot`) is read back
+  from the GPU by a listener of the launcher's own. Nothing is read back
+  when nothing is captured.
+- Looked into on 2026-11-25, with the patched build and the launcher's
+  window or none:
+  - The HEVC frame loss on a host-native target is gone: 0 of 125 frames
+    lost through Wayland, OpenGL ES and Vulkan in three runs. It was seen
+    in QEMU's own window, where the target got 25 pictures a second.
+  - The HEVC playback on a simulated ARM64 target that ran into the time
+    limit ends now, with 0 of 125 frames lost through OpenGL ES (108
+    emulated).
+  - The Flutter player loses 85 to 95 of 125 frames of every stream, with
+    the host's GPU and emulated alike, at 720p as at 1080p, and in
+    container mode: always about 40 frames shown. So it is not the
+    graphics. The application's own hand-over between its reading and its
+    drawing is the suspect (it reads the decoder's pipe with blocking
+    calls); that needs a build of the application to show, which was not
+    made.
 - With `--window`, OpenGL ES and Flutter render on the Apple GPU (the target
   reports `virgl (ANGLE (Apple, Apple M6, OpenGL 4.1 Metal))`), for
   host-native, simulated ARM64 and simulated ARM32 targets. QEMU ends cleanly.
@@ -883,13 +952,16 @@ What was seen, in single runs that were not recorded as results:
   target ran into the workload's time limit.
 - On a host-native target the HEVC stream lost frames with this build (21 of
   125 through Wayland, 26 through OpenGL ES, 61 through Vulkan), where the
-  installed QEMU loses none. Not investigated.
-- Without a window the build crashes as soon as the target starts to use the
-  GPU, so the launcher emulates graphics there and says why.
-- The display cannot be captured while it is rendered on the host GPU: QEMU
-  refuses the capture over its machine protocol and refuses to start its VNC
-  server beside the OpenGL window. `./emu verify` therefore cannot cover this
-  path on macOS; `graphics-host-vm` stays unavailable there.
+  installed QEMU loses none. That was in QEMU's own window; it is gone
+  with the change to QEMU (above).
+- Without a window a build from before this project's change crashes as
+  soon as the target starts to use the GPU (QEMU's `egl-headless` display),
+  so the launcher emulates graphics there and says why. With the change the
+  launcher uses QEMU's D-Bus display there (above).
+- In QEMU's own window (`--option window=qemu`) the display cannot be
+  captured while it is rendered on the host GPU: QEMU refuses the capture
+  over its machine protocol and refuses to start its VNC server beside the
+  OpenGL window.
 
 `graphics-demo` runs a Wayland, an OpenGL ES, a Vulkan and a Flutter test.
 `--screenshot DIR` saves a PNG of the emulator's display at the end of each

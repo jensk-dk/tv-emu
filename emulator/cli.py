@@ -274,6 +274,14 @@ def cmd_doctor(args):
         probe = graphics.probe_vm(binary)
         print("graphics    VM mode: %s" % ("host acceleration available: " + probe["reason"] if probe["available"]
                                            else "emulated only: " + probe["reason"]))
+        other = graphics.host_graphics_qemu(vm.QEMU_BINARY[native])
+        if other:
+            # macOS: the experimental QEMU, which a run that asks for the host's GPU takes.
+            chosen = graphics.host_graphics_binary(vm.QEMU_BINARY[native])
+            found = graphics.probe_vm(chosen, launcher_window=True)
+            print("graphics    VM mode with --graphics host: %s (%s): %s" % (
+                vm.qemu_version(chosen), chosen,
+                "in the launcher's window: " + found["reason"] if found["available"] else found["reason"]))
         if probe["available"]:
             # How the launcher's window gets a display that the host's GPU renders.
             buffers = graphics.probe_buffer_window(binary)

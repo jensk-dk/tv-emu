@@ -20,6 +20,7 @@ import socket
 import struct
 import subprocess
 import tempfile
+import threading
 import time
 
 from . import host, imagefile
@@ -121,6 +122,36 @@ def dbus_read_back(binary):
     return host.host_os() == "macos" and "dbus_gl_read_back" in _qemu_output(binary, "-trace", "help")
 
 
+def host_graphics_qemu(name):
+    """The directory of another QEMU build that a run asking for the host's
+    GPU (--graphics host) takes `name` from, or None for the installed one.
+
+    That is the experimental QEMU on macOS (host.experimental_qemu_dir),
+    where the installed QEMU has no display device for the host's GPU and
+    that one has. Nothing is chosen where EMU_QEMU_DIR names a build: that
+    is the user's choice. A run that does not ask for the host's GPU keeps
+    the installed QEMU, which is what the host is evaluated with."""
+    if host.host_os() != "macos" or host.qemu_dir_given():
+        return None
+    usual = shutil.which(name, path=host.tool_path())
+    if usual and "virtio-gpu-gl-pci" in _qemu_output(usual, "-device", "help"):
+        return None
+    directory = host.experimental_qemu_dir()
+    other = directory and (shutil.which(name, path=directory) or
+                           (name == "qemu-system-arm" and shutil.which("qemu-system-aarch64", path=directory)))
+    if other and "virtio-gpu-gl-pci" in _qemu_output(other, "-device", "help"):
+        return directory
+    return None
+
+
+def host_graphics_binary(name):
+    """The QEMU program `name` that a run asking for the host's GPU uses."""
+    directory = host_graphics_qemu(name)
+    if directory:
+        return shutil.which(name, path=directory) or shutil.which("qemu-system-aarch64", path=directory)
+    return host.find_tool(name)
+
+
 def _render_node():
     """A DRM render node this user can open: the sign, on Linux, that a GPU
     driver is loaded. Without one the host's own OpenGL is rendered by its
@@ -215,10 +246,14 @@ def probe_vm(binary, window=None, launcher_window=False, guest=None):
                  "reason": "on Windows, QEMU's display that renders on the host GPU without a window "
                            "(egl-headless) stays black: the target renders on the host GPU, but no frame "
                            "reaches the emulator's display. In a window (--window) it does"}
-    elif host.host_os() == "macos" and launcher_window and dbus_read_back(binary):
+    elif host.host_os() == "macos" and dbus_read_back(binary):
+        # With or without the launcher's window: QEMU's D-Bus display has no window of its own,
+        # and reads a picture back for whoever listens (the window, or a capture).
         probe = {"available": True, "venus": False,
-                 "reason": mapped + " and hands each picture to the launcher's window (QEMU's D-Bus display, "
-                                    "read back from the GPU)"}
+                 "reason": mapped + (" and hands each picture to the launcher's window (QEMU's D-Bus display, "
+                                     "read back from the GPU)" if launcher_window else
+                                     ", without a window (QEMU's D-Bus display; a picture is read back from the "
+                                     "GPU when one is captured)")}
     elif host.host_os() == "macos":
         # Seen with a QEMU 11.1.90 build that carries the macOS OpenGL patches:
         # QEMU ends with a segmentation fault as soon as the target's driver
@@ -307,11 +342,29 @@ def vm_arguments(plan, width, height, memory_mb, options, sixty=False):
     if venus in ("yes", "on", "true", "1") or (venus == "auto" and plan.get("venus") and host.host_os() == "linux"):
         # Vulkan pass-through shares guest memory with the host renderer.
         device += ",venus=on,blob=on,hostmem=4G"
-        arguments += ["-object", "memory-backend-memfd,id=emu-ram,size=%dM" % memory_mb,
-                      "-machine", "memory-backend=emu-ram"]
+        if host.host_os() == "linux":       # memfd is Linux's; macOS has no such backend
+            arguments += ["-object", "memory-backend-memfd,id=emu-ram,size=%dM" % memory_mb,
+                          "-machine", "memory-backend=emu-ram"]
         description = "virtio-gpu with virglrenderer (OpenGL ES and Vulkan on the host GPU)"
     backend = "%s,%s" % (window, OPENGL_WINDOWS[window]) if window else "egl-headless"
     return arguments + ["-device", device], backend, description
+
+
+def vulkan_environment(binary):
+    """What QEMU's environment needs on macOS for the renderer to map Vulkan:
+    virglrenderer's server program opens MoltenVK by its bare name, which
+    macOS finds only in the directories it is told of. Homebrew has the
+    library beside the QEMU it built (opt/molten-vk). {} where it is not
+    found, and on other hosts. (macOS takes such variables out of the
+    environment of its own programs, the system's Python among them, so
+    giving it to the launcher does not reach QEMU.)"""
+    if host.host_os() != "macos":
+        return {}
+    prefix = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(binary)))))
+    directory = os.path.join(prefix, "opt", "molten-vk", "lib")
+    if not os.path.isfile(os.path.join(directory, "libMoltenVK.dylib")):
+        return {}
+    return {"DYLD_FALLBACK_LIBRARY_PATH": ":".join([directory, "/usr/local/lib", "/usr/lib"])}
 
 
 def container_arguments(plan):
@@ -510,6 +563,9 @@ DBUS_PREFIX = "dbus:"
 # handed over as the GPU's buffer.
 DBUS_GL_DISPLAY = "dbus,p2p=yes,gl=on"
 DBUS_GL_PREFIX = "dbus-gl:"
+# macOS, with a QEMU that reads a picture of the host's GPU back (dbus_read_back): the display with
+# pixels all the same. ANGLE, which is that QEMU's OpenGL, is OpenGL ES.
+DBUS_READ_BACK_DISPLAY = "dbus,p2p=yes,gl=es"
 # How the launcher's window gets a display that the host's GPU renders.
 WINDOW_DISPLAYS = ("auto", "buffer", "vnc")
 
@@ -570,8 +626,7 @@ def window_endpoint(binary, plan, wanted="auto"):
             and "dbus" in _qemu_output(binary, "-display", "help").split():
         path, directory = _private_socket("display.sock")
         if path:
-            # ANGLE, which is the experimental QEMU's OpenGL on macOS, is OpenGL ES.
-            backend = DBUS_DISPLAY + (",gl=es" if read_back else "")
+            backend = DBUS_READ_BACK_DISPLAY if read_back else DBUS_DISPLAY
             return ["-qmp", "unix:%s,server=on,wait=off" % path], backend, DBUS_PREFIX + path, directory, None
     arguments, address, directory = vnc_endpoint()
     return arguments, None, address, directory, note
@@ -595,6 +650,54 @@ class WindowCapture:
 
     def close(self):
         pass
+
+
+class ReadBackCapture:
+    """Captures a display that the host's GPU draws where QEMU reads the
+    picture back for a listener of its D-Bus display (dbus_read_back, on
+    macOS) and no window shows it: this is the listener. It keeps the newest
+    picture and writes it when asked."""
+
+    def __init__(self, qmp_path):
+        from . import dbusdisplay
+        self._lock = threading.Lock()
+        self._size = None
+        self._frame = None
+        self.client = dbusdisplay.Client(qmp_path, self._on_size, self._on_update)
+        self.client.start()
+
+    def _on_size(self, width, height):
+        pass
+
+    def _on_update(self, x, y, width, height, frame):
+        # The client does not write into a buffer it has handed over.
+        with self._lock:
+            self._size, self._frame = (width, height), frame
+        self.client.shown()
+
+    def capture(self, path, image_format):
+        deadline = time.time() + 10
+        while self._frame is None and time.time() < deadline:
+            time.sleep(0.05)
+        with self._lock:
+            size, pixels = self._size, self._frame
+        if pixels is None:
+            raise EmuError("no picture of the display arrived from QEMU's D-Bus display")
+        width, height = size
+        rgb = bytearray(width * height * 3)
+        rgb[0::3], rgb[1::3], rgb[2::3] = pixels[2::4], pixels[1::4], pixels[0::4]
+        imagefile.save(path, width, height, rgb, image_format)
+
+    def close(self):
+        self.client.close()
+
+
+def read_back_capture():
+    """(QEMU arguments, capture client, directory to remove) for ReadBackCapture."""
+    path, directory = _private_socket("display.sock")
+    if not path:
+        raise EmuError("no private socket for QEMU's D-Bus display could be made")
+    return ["-qmp", "unix:%s,server=on,wait=off" % path], ReadBackCapture(path), directory
 
 
 def capture_endpoint(plan, vnc=None):
