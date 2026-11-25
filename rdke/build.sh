@@ -98,7 +98,8 @@ echo "copied $kernel and $(basename "$image") (as rootfs.ext4)"
 EOT
 chmod +x "$work/build-in-container.sh" "$work/copy-in-container.sh"
 
-"$runtime" volume create tvemu-rdke-build >/dev/null
+# Podman refuses to create a volume that is there; Docker does not mind.
+"$runtime" volume inspect tvemu-rdke-build >/dev/null 2>&1 || "$runtime" volume create tvemu-rdke-build >/dev/null
 "$runtime" run --rm --user root -v tvemu-rdke-build:/build tvemu-rdke-check chown builder:builder /build
 "$runtime" run --rm -v "$work:/work/rdk:ro" -v "$here/meta-tvemu-rdke:/work/meta-tvemu-rdke:ro" \
   -v tvemu-rdke-build:/build -e TVEMU_MACHINE tvemu-rdke-check /work/rdk/build-in-container.sh "$userland" "$layers_kind" $targets
