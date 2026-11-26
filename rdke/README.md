@@ -1329,6 +1329,40 @@ unavailable with an older one where they can tell.
   the home screen hidden under it, as the user interface hides itself when
   it starts an application), counted over 10 s each. A host-native guest has to give 50; for a guest
   on a simulated CPU the check gives the numbers and ends as unavailable.
+- `rdke-browser-other-graphics`, `rdke-launcher-other-graphics`,
+  `rdke-video-other-graphics`, `rdke-aamp-other-graphics`,
+  `rdke-health-other-graphics` and `rdke-device-other-graphics`
+  (2026-11-26): each of those six checks a second time, with the graphics
+  that an RDK-E image does not get unasked on the host. On a Mac with the
+  experimental QEMU that is emulated graphics, so the target's own drawing
+  stays checked there; on a host where the image is emulated unasked it is
+  the host's GPU, and the check ends as unavailable where the launcher's
+  window cannot show such a display. Each says which graphics it asked for
+  and requires that the launcher gave it. All six pass on the Mac
+  (2026-11-26, in the whole of `./emu verify`); none was run on Linux.
+
+*How the power state gets to ON, and the fault in `rdke-device`*
+(2026-11-26, macOS, from the journal of boots with emulated graphics).
+The image starts at STANDBY: the middleware's PowerManager says "Setting
+default powerstate to POWER_STATE_STANDBY" (`PLATCO_BOOTTO_STANDBY`) with
+"Power State Before Reboot: ON". RDK's user interface sets ON when it
+starts, about 3 s after the kernel: it compares the state before the
+reboot with the state now and calls `setPowerState`. It makes two calls
+within 3 ms. The first carries a state that PowerManager reads as UNKNOWN
+and refuses ("Failed to set power state: 1"); the second carries ON and
+finds "a state change request in progress for UNKNOWN state", which it
+cancels. `rdke-device` found STANDBY for the whole 60 s it waits in three
+whole runs of the checks on 2026-11-25. On 2026-11-26 the state was
+STANDBY 60 s after the start in one boot by hand and ON in the 23 boots
+after it, in the whole run of the checks (both graphics) and in a run of
+the check alone. That the two calls race, so that now and then ON is
+lost, is the likely cause and is **not shown**: the one boot that stayed
+at STANDBY did not have its journal read, and none could be made to
+since. Why it was three of three whole runs on one day and none on the
+next is not known. Nothing in the layer was changed for it; the check's
+failure message now carries the journal's lines about those calls. A
+device without that user interface stays at STANDBY until something
+sets ON.
 
 Every RDK-E check now starts the image with Thunder's and the SSH server's
 ports forwarded to free ports of this host. Not covered by a check:

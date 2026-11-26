@@ -2930,6 +2930,35 @@ def _rdke_thunder_reached(asked, seen, slow):
     return False
 
 
+# What an RDK-E check that names no graphics asks for (None: what the launcher gives unasked), and
+# the provider the last RDK-E run got. The "-other-graphics" checks set the first (_rdke_other).
+_rdke_unasked = None
+_rdke_provider = None
+
+
+def _rdke_other(check):
+    """`check`, an RDK-E check that names no graphics, with the graphics that
+    such an image does not get unasked on this host: emulated where that is
+    the host's GPU (macOS with the experimental QEMU), the host's GPU where
+    it is emulated. So each of these checks sees the image drawn both ways."""
+    def run():
+        global _rdke_unasked
+        from . import rootfs
+        from .run import rdke_host_unasked
+        asked = "emulated" if rdke_host_unasked(rootfs.rdke_arch()) else "host"
+        _rdke_unasked = asked
+        try:
+            lines = check()
+        finally:
+            _rdke_unasked = None
+        _require(_rdke_provider == asked, "%s graphics was asked for and the launcher chose %r"
+                 % (asked, _rdke_provider))
+        return lines + ["run with --graphics %s, which an RDK-E image does not get unasked on this host: %s drew"
+                        % (asked, "the target's CPU" if asked == "emulated" else "the host's GPU")]
+    run.__doc__ = check.__doc__
+    return run
+
+
 def _rdke_session(body, options=None, on_audio=None, graphics=None):
     """Starts the RDK-E image of this host with the launcher's window, waits
     for its shell, and has `body(viewer, typed, answer, seen, console, lock,
@@ -2939,6 +2968,9 @@ def _rdke_session(body, options=None, on_audio=None, graphics=None):
     `options` say where it goes. Returns `seen` (with the run's outcome as
     "outcome"), the kind of guest, and what the image is."""
     from . import rootfs
+    global _rdke_provider
+    _rdke_provider = None
+    graphics = graphics or _rdke_unasked
     guest = rootfs.rdke_arch()
     present, said = rootfs.rdke_state(arch=guest)
     if not present:
@@ -3023,6 +3055,7 @@ def _rdke_session(body, options=None, on_audio=None, graphics=None):
                                                  **{"verbose-boot": "no", vm.FORWARD_OPTION: forward}),
                                     timeout=1200 * slow))
     seen["outcome"] = outcome
+    _rdke_provider = (outcome.environment["emulator"].get("graphics") or {}).get("provider")
     if "unavailable" in seen:
         raise CheckUnavailable(seen["unavailable"])
     _require("error" not in seen, seen.get("error"))
@@ -3466,10 +3499,15 @@ def check_rdke_device():
         call("serial", "org.rdk.System.1.getSerialNumber")
         call("make", "DeviceInfo.1.make")
         call("model", "DeviceInfo.1.modelid")
-        # Seen as STANDBY in three full runs of the checks (2026-11-25, macOS, emulated graphics), for
-        # all of the 60 s waited here; alone, and after the six RDK-E checks before it, the check gets
-        # ON, and so it did in the one full run since the image is drawn by the host's GPU there.
-        # Cause not known; a failure now says what the target's power file and journal have.
+        # The image starts at STANDBY (the middleware's PowerManager, "PLATCO_BOOTTO_STANDBY"), and
+        # RDK's user interface sets ON when it starts: it finds the state before the reboot (ON)
+        # unlike the state now, and calls setPowerState. It makes two calls within 3 ms, the first
+        # with a state that PowerManager reads as UNKNOWN and refuses, the second with ON, which
+        # cancels the first "in progress" (journal, 2026-11-26). STANDBY was seen for all of the 60 s
+        # waited here in three full runs of the checks (2026-11-25, emulated graphics) and in one
+        # boot by hand of 24 on 2026-11-26; that the two calls race is the likely cause and was not
+        # shown: no boot that stayed at STANDBY had its journal read. A failure now says what the
+        # target's power file and the journal's lines about those calls have.
         asked_at = time.monotonic()
         _wait(lambda: call("power", "org.rdk.System.1.getPowerState") or
               (seen["power"] or {}).get("powerState") == "ON", 60 * slow, 2)
@@ -3478,8 +3516,10 @@ def check_rdke_device():
             # What the target itself has about it, for the failure's message.
             seen["power-file"] = asked("governor", "cat /run/tvemu/scaling_governor", r"\w*")
             seen["power-journal"] = asked(
-                "powerlog", "journalctl -b -o cat --no-pager | grep -i -E 'standby|power ?state|pwrmgr' | tail -n 4 | "
-                            "cut -c1-55 | tr '\\n' '|'", r".*", seconds=40)
+                "powerlog", "journalctl -b -o cat --no-pager | grep -E 'SetPowerState: (>>|<<|There|Power)|Power state "
+                            "change to|Failed to set power state|_PowerStateHandlingWhileReboot' | tail -n 8 | "
+                            "sed 's/.*\\(SetPowerState\\|powerMgrWorkerThread\\|_PowerState\\)/\\1/' | cut -c1-90 | "
+                            "tr '\\n' '|'", r".*", seconds=40)
         call("lights", "org.rdk.FrontPanel.1.getFrontPanelLights")
 
     seen, kind, said = _rdke_session(body)
@@ -3801,6 +3841,18 @@ def _command_checks():
                                                         "image (--graphics host)"),
         "rdke-rate-host-60": (check_rdke_rate_host_60, "9.4", "the same for a 1920x1080 stream of 60 frames a "
                                                               "second, with what the player says it showed"),
+        "rdke-browser-other-graphics": (_rdke_other(check_rdke_browser), "9.4",
+            "rdke-browser with the graphics an RDK-E image does not get unasked on this host"),
+        "rdke-launcher-other-graphics": (_rdke_other(check_rdke_launcher), "9.4",
+            "rdke-launcher with the graphics an RDK-E image does not get unasked on this host"),
+        "rdke-video-other-graphics": (_rdke_other(check_rdke_video), "9.4",
+            "rdke-video with the graphics an RDK-E image does not get unasked on this host"),
+        "rdke-aamp-other-graphics": (_rdke_other(check_rdke_aamp), "9.4",
+            "rdke-aamp with the graphics an RDK-E image does not get unasked on this host"),
+        "rdke-health-other-graphics": (_rdke_other(check_rdke_health), "9.4",
+            "rdke-health with the graphics an RDK-E image does not get unasked on this host"),
+        "rdke-device-other-graphics": (_rdke_other(check_rdke_device), "9.4",
+            "rdke-device with the graphics an RDK-E image does not get unasked on this host"),
         "doctor": (check_doctor, "9.2", "the launcher shows what it finds on the host, and names what is missing"),
         "report-serve": (check_report_serve, "9.2", "the results command serves the page and all that it reads"),
         "report-page": (check_report_page, "9.2", "the results page shows every record and its sections"),

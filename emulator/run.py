@@ -198,6 +198,14 @@ def _require_rdke(opts):
         raise EmuError(refused[0], hint=refused[1])
 
 
+def rdke_host_unasked(guest):
+    """Whether an RDK-E image for `guest` is drawn by the host's GPU when a
+    run does not say: on macOS, host-native, where a QEMU on this host reads
+    the picture back for the launcher's window."""
+    return bool(host.host_os() == "macos" and guest == host.host_arch()
+                and graphics.dbus_read_back(graphics.host_graphics_binary(vm.QEMU_BINARY[guest])))
+
+
 def launch(opts):
     """Run a workload; returns an Outcome. Raises EmuError when the emulator
     cannot be started at all."""
@@ -376,9 +384,7 @@ def launch(opts):
             # macOS, host-native: an RDK-E image is drawn by the host's GPU unasked where a QEMU on
             # this host reads the picture back for the launcher (60 pictures a second with the VM's
             # CPUs mostly idle, docs/frame-transfer.md). Elsewhere it stays emulated unless asked.
-            rdke_host = rdke_emulated and host.host_os() == "macos" and guest == host.host_arch() \
-                and opts.options.get("window") != "qemu" \
-                and graphics.dbus_read_back(graphics.host_graphics_binary(vm.QEMU_BINARY[guest]))
+            rdke_host = rdke_emulated and opts.options.get("window") != "qemu" and rdke_host_unasked(guest)
             if rdke_host:
                 rdke_emulated, opts.graphics = False, "host"
             if opts.graphics == "host":
