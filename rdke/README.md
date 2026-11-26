@@ -132,7 +132,7 @@ everything here was found by building and running it, on the Linux host
   and of the same video with QEMU 8.2.2, which holds a GPU-accelerated
   target to that, and 60.0 of both with a QEMU 11.0.0 built by hand
   (`EMU_QEMU_DIR`). Emulated graphics is still the default for an RDK-E
-  target: with the host's own QEMU its home screen is at 60. Only `libwesteros_render_embedded`, the
+  target on Linux: with the host's own QEMU its home screen is at 60. Only `libwesteros_render_embedded`, the
   renderer RDK's window manager loads, has the change; the copy was not
   timed, and the frame rate inside the VM was not measured.
 - *The launcher's window gets the display over D-Bus on Linux too*, as on
@@ -1142,9 +1142,19 @@ process):
   during video, with the VM's 6 CPUs 97 % and 83 % idle (emulated graphics
   in the same runs: 60.0 and 55.8, 68 % and 47 % idle), and AAMP and the
   browser's own player play the reference stream with picture and sound.
-  `./emu verify rdke-rate-host` checks the rate and the picture. Emulated
-  graphics stays what an RDK-E target gets unasked; `--graphics host` asks
-  for the host's GPU. The ARM64 image was built again that day with the
+  `./emu verify rdke-rate-host` checks the rate and the picture. Until
+  2026-11-25 emulated graphics was what an RDK-E target got unasked there.
+  Since that evening, at the user's direction, a host-native RDK-E target
+  on a Mac is drawn by the host's GPU unasked where a QEMU that reads the
+  picture back is installed (`./setup.sh --experimental-qemu`); the run
+  says so, `--graphics emulated` asks for the other, and a Mac without
+  that QEMU emulates as before. The image's checks then run with the
+  host's GPU as well, except `rdke-rate`, which asks for emulated graphics
+  by name. `rdke-rate-host-60` plays a 1920x1080 clip of 60 frames a
+  second, made on the host with the Debian image's FFmpeg, and asks 50
+  pictures a second of the window and 50 shown frames a second of the
+  browser's player; that floor is the reference stream's, and no number
+  of its own is agreed for the clip. The ARM64 image was built again that day with the
   renderer's change for virgl, which AAMP's frames need there.
 - *RDK's HDMI-CEC reader kept one of the VM's CPUs busy; repaired.* The VM
   has no CEC adapter, so the driver cannot be opened, and the library's

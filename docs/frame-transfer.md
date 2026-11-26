@@ -482,11 +482,38 @@ Measured on 2026-11-25, one run each, in the launcher's window:
   virglrenderer's upload of a texture from the target's memory
   (`vrend_renderer_transfer_write_iov`, `glTexSubImage2D`) and 1.8 ms in
   the read-back (`glReadPixels`, most of it waiting for the GPU); it was
-  idle 41 % of the time. So the cost is the target's compositor handing
-  the host a full picture from memory each frame. Why the Flutter
-  application's picture takes that way, when it draws with the GPU, was
-  not looked for. This corrects the first reading of the same day, which
-  suspected the read-back.
+  idle 41 % of the time. So the cost is a full picture handed to the
+  host from the target's memory each frame. This corrects the first
+  reading of the same day, which suspected the read-back.
+- **For Flutter it is GTK that uploads, not the application or the
+  compositor.** Looked for the same evening, in the target at 3840x2160
+  with the host's GPU:
+  - Flutter draws with the GPU: its engine says "Using the Impeller
+    rendering backend (OpenGLESSDF)", and `FLUTTER_LINUX_RENDERER=opengl`
+    changes nothing (59 frames a second in that run; the software
+    renderer does not run this application at all).
+  - Its window reaches the compositor as a GPU buffer
+    (`zwp_linux_dmabuf_v1`, 13 buffers and 360 attaches in 6 s; no
+    shared-memory buffer).
+  - A tracing library loaded into the application (it counts
+    `glTexImage2D`, `glTexSubImage2D` and `glReadPixels` by the library
+    that calls) found 143 uploads of 3840x2160 from `libgdk-3.so.0` in
+    6 s, one a frame, and from Flutter's own library only small ones (144
+    of 4096x1024 at most, 4.3 megapixels in all). Nothing was read from
+    the GPU. QEMU's profile agrees: uploads only.
+  - So the Flutter SDK's Linux embedder, which is a GTK 3 widget, has GTK
+    upload the window's own picture each frame to blend it with
+    Flutter's. That GTK does this because it takes Flutter's picture to
+    have transparency is the author's reading of GTK 3's source from
+    memory, not shown here. `GDK_GL=gles,always` changes nothing, and
+    without `GDK_GL=gles` GTK gets no OpenGL at all on this host (the
+    Flutter window then has 1280x720 and nothing is uploaded).
+  - The Flutter test gave 51.1, 52.7, 58.7, 59.0, 59.3 and 59.4 frames a
+    second in six runs of 6 to 14 s that evening, so the loss at 4K is
+    between one frame in sixty and one in seven. At 1920x1080 the upload
+    is a quarter of that and the test is at 60.
+  - Not tried: an embedder without GTK (the ones set-top boxes use draw
+    straight to Wayland), or a change to GTK or the embedder.
 - **A stream of 60 frames a second** reaches the window whole with the
   host's GPU. The clip was made for this (FFmpeg's test picture, H.264,
   8 Mbit/s), copied into the target and played by the browser's own

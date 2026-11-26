@@ -852,7 +852,10 @@ The build installs beside Homebrew's QEMU. Since 2026-11-25 the launcher
 takes it by itself for a run that asks for the host's GPU, where the
 installed QEMU has no host graphics; `./emu doctor` names it, and the run
 says so. Every other run keeps the installed QEMU, which is what the host
-is evaluated with: `--graphics auto` emulates as before.
+is evaluated with: `--graphics auto` emulates as before. One kind of run
+gets the host's GPU unasked: an RDK-E image in a host-native VM
+(`--rootfs rdke`), since 2026-11-25; `--graphics emulated` asks for the
+other there.
 
     ./emu run --mode vm --workload graphics-demo --graphics host --window
 
@@ -876,7 +879,8 @@ What was seen, in single runs that were not recorded as results:
   and installed it through Homebrew, and with that build the check gave
   60.1 and 60.1.
 - Since 2026-11-25 the Debian image's workloads are checked on this way
-  (`./emu verify graphics-host-vm`), and `--screenshot` works with it:
+  (`./emu verify graphics-host-vm`, and `video-host-vm` for video through
+  each graphics technology), and `--screenshot` works with it:
   the capture is taken from the window, or without a window from QEMU's
   D-Bus display (below).
 - Measured on 2026-11-25, one run each, host graphics against emulated, in
@@ -893,12 +897,20 @@ What was seen, in single runs that were not recorded as results:
   So at 4K the Flutter test falls short of 60 with the host's GPU (49 to
   57 in three runs). The read-back is not why, as first suspected: the
   launcher's window got 122 pictures a second from the OpenGL ES test at
-  4K. What costs is a picture that a program draws in its own memory and
-  the target's compositor has to hand to the host's GPU each frame: in a
-  profile of QEMU at 4K that upload took 6.6 ms a picture and the read-back
-  1.8 ms. The Wayland test, which draws in memory, gets 62 pictures a
-  second at 4K the same way. Why the Flutter application's picture goes
-  that way was not looked for.
+  4K. What costs is a full picture that is handed to the host's GPU from the
+  target's memory each frame: in a profile of QEMU at 4K that upload took
+  6.6 ms a picture and the read-back 1.8 ms. The Wayland test, which draws
+  in memory, gets 62 pictures a second at 4K the same way. For Flutter the
+  upload is not the application's own drawing: Flutter draws with the GPU
+  (its Impeller renderer on OpenGL ES), and its window is handed to the
+  compositor as a GPU buffer. It is GTK 3, which the Flutter SDK's Linux
+  embedder is built on: each frame GTK uploads the window's own picture,
+  the whole 3840x2160 of it, and blends it with Flutter's (counted with a
+  tracing library in the target: 143 such uploads from `libgdk-3` in 6 s,
+  none of that size from Flutter's library, and no read from the GPU). No
+  setting of GTK or Flutter was found that turns it off; an embedder
+  without GTK would not have it, and none was tried. In five more runs of
+  6 to 14 s the Flutter test gave 51 to 59 frames a second at 4K.
 - Vulkan on the host's GPU does not work with the target image as it is
   (2026-11-25, `--option venus=yes`). QEMU starts, the renderer opens
   MoltenVK once the launcher names its directory to QEMU, and then the

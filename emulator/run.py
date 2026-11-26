@@ -373,15 +373,25 @@ def launch(opts):
                 data_disk = run_dir / "data.img"
                 with open(data_disk, "wb") as handle:
                     handle.truncate(int(opts.options.get("data-disk-mb", DEFAULT_DATA_DISK_MB)) * 1024 * 1024)
+            # macOS, host-native: an RDK-E image is drawn by the host's GPU unasked where a QEMU on
+            # this host reads the picture back for the launcher (60 pictures a second with the VM's
+            # CPUs mostly idle, docs/frame-transfer.md). Elsewhere it stays emulated unless asked.
+            rdke_host = rdke_emulated and host.host_os() == "macos" and guest == host.host_arch() \
+                and opts.options.get("window") != "qemu" \
+                and graphics.dbus_read_back(graphics.host_graphics_binary(vm.QEMU_BINARY[guest]))
+            if rdke_host:
+                rdke_emulated, opts.graphics = False, "host"
             if opts.graphics == "host":
                 # The experimental QEMU, where setup.sh installed it: on macOS the usual one has no
                 # host graphics, on Linux it holds the target to 30 pictures a second and has no Vulkan.
                 host.RUN_QEMU_DIR = graphics.host_graphics_qemu(vm.QEMU_BINARY[guest])
                 if host.RUN_QEMU_DIR:
-                    outcome.notes.append("--graphics host: QEMU is the experimental build in %s, since the "
-                                         "installed one %s" % (host.RUN_QEMU_DIR, (
+                    outcome.notes.append("%s: QEMU is the experimental build in %s, since the "
+                                         "installed one %s" % (
+                                             "an RDK-E image on this host is drawn by the host's GPU"
+                                             if rdke_host else "--graphics host", host.RUN_QEMU_DIR,
                                              "cannot use the host's GPU" if host.host_os() == "macos" else
-                                             "holds a display that the host's GPU draws to 30 pictures a second")))
+                                             "holds a display that the host's GPU draws to 30 pictures a second"))
             qemu = host.require_tool(vm.QEMU_BINARY[guest], "VM mode with a %s guest" % guest)
             virtio_sound = True
             if opts.drivers.get("audio") in ("emulated", "host"):
@@ -426,6 +436,10 @@ def launch(opts):
             display = _display_plan(opts, lambda: graphics.probe_vm(qemu, None if own else kind, launcher_window=own,
                                                                     guest=guest),
                                     kind, always=rdke)
+            if display and rdke_host:
+                display.update({"requested": "auto",
+                                "reason": "an RDK-E image is drawn by the host's GPU on this host unless a run asks "
+                                          "for emulated graphics: %s" % display["reason"]})
             if display and rdke_emulated:
                 # Linux: a display that the host's GPU draws comes at 60 only from QEMU 11 on.
                 # macOS: with a QEMU that reads it back for the window it comes at 60 as well
@@ -789,8 +803,17 @@ def _parse(line, outcome, ready, screens=None):
     try:
         data = json.loads(payload)
     except ValueError:
-        outcome.protocol_errors.append(line)
-        return
+        # QEMU's own messages come on the same stream as the console and can follow a line
+        # of the target before its end ("wav: fseek to rlen failed", when the sound card's
+        # backend is a pipe and the target closes its output).
+        cut = payload.find("}qemu-system-")
+        try:
+            data = json.loads(payload[:cut + 1]) if cut >= 0 else None
+        except ValueError:
+            data = None
+        if data is None:
+            outcome.protocol_errors.append(line)
+            return
     if marker == "EMU-READY":
         outcome.ready = data
         outcome.boot_seconds = round(time.time() - outcome.started_at, 3)

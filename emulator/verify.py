@@ -544,9 +544,10 @@ def _media_codecs(mode, arch="native"):
 _video_runs = {}
 
 
-def _video(technology, mode, arch="native"):
+def _video(technology, mode, arch="native", provider=None):
     """Decoded video is rendered through one graphics technology and reaches
-    the display, for each video codec."""
+    the display, for each video codec. `provider` asks for a graphics
+    provider by name."""
     if technology == "vulkan":
         _require_vulkan(mode, arch)
     if technology == "flutter":
@@ -555,13 +556,16 @@ def _video(technology, mode, arch="native"):
         _require(guest in flutter["architectures"],
                  "the %s target image has no Flutter application: the Flutter SDK (%s) builds Linux applications "
                  "for %s only" % (guest, flutter["version"], " and ".join(flutter["architectures"])))
-    key = (mode, arch)
+    key = (mode, arch, provider)
+    unasked = _video_runs.get((mode, arch, None))
+    if provider and unasked and unasked[0]["graphics"]["provider"] == provider:
+        key = (mode, arch, None)        # the run that asked for nothing got this provider
     if key not in _video_runs:
         width, height = graphics.resolution("720p")
         with tempfile.TemporaryDirectory(prefix="emu-verify-") as shots:
             _, outcome = _run(mode=mode, arch=arch, workload="media-decode", args=["--tests", "playback"],
                               resolution="720p", screenshot_dir=shots, screenshot_format="ppm",
-                              options={"audio-output": "none"}, timeout=7200)
+                              graphics=provider, options={"audio-output": "none"}, timeout=7200)
             evaluation = {}
             host_rendered = outcome.environment["emulator"]["graphics"]["provider"] == "host"
             for result in outcome.results:
@@ -589,6 +593,26 @@ def _video(technology, mode, arch="native"):
                         if result.get("display_restarts") else ""))
     return lines + ["graphics provider: %s; sound: %s" % (emulator["graphics"]["provider"],
                                                           next(iter(mine.values()))[1].get("audio"))]
+
+
+def check_video_host_vm():
+    """Decoded video with the host's GPU drawing for the target (--graphics
+    host) in a host-native VM: each technology's picture reaches the display.
+    On a host whose installed QEMU maps graphics to the host's GPU the
+    video-*-vm checks already run so, and this check reads their run; on
+    macOS the QEMU for it is taken only for a run that asks."""
+    probe = graphics.probe_vm(graphics.host_graphics_binary(vm.QEMU_BINARY[host.host_arch()]))
+    if not probe["available"]:
+        raise CheckUnavailable(probe["reason"])
+    flutter = image.definition()["source"]["flutter"]
+    technologies = ["wayland", "gles", "vulkan"] + (["flutter"] if host.host_arch() in flutter["architectures"] else [])
+    lines, last = [], None
+    for technology in technologies:
+        found = _video(technology, "vm", "native", provider="host")
+        lines += ["%s: %s" % (technology, line) for line in found[:-1]]
+        last = found[-1]
+    _require(last and last.startswith("graphics provider: host"), "the host's GPU was asked for and the run's %s" % last)
+    return lines + [last, "the frames a player dropped are reported and not judged: no number is agreed for them"]
 
 
 class _HostSink:
@@ -964,6 +988,8 @@ def _media_checks():
             checks["video-%s-%s" % (technology, suffix)] = (
                 lambda t=technology, m=mode, a=arch: _video(t, m, a), "5.3",
                 "decoded video is rendered through %s in %s" % (TECHNOLOGY_NAMES[technology], where))
+    checks["video-host-vm"] = (check_video_host_vm, "5.3", "decoded video is shown with the host's GPU drawing, "
+                                                           "in a host-native VM")
     for suffix, mode, arch, where in variants:
         checks["audio-host-" + suffix] = (lambda m=mode, a=arch: _audio_host(m, a), "5.3",
                                           "decoded audio is played through the host OS, from " + where)
@@ -3271,7 +3297,8 @@ def _rdke_stream_check(page, there, missing, address, played, moves, drawn_by=No
              "marker block have the stream's colours; %s, with the "
              "browser's processes at %s%% of one CPU"
              % (tuple(seen["size"]) + ("decoding is done on the target's CPU and drawing on the host's GPU"
-                                       if drawn_by == "host" else
+                                       if ((outcome.environment["emulator"].get("graphics") or {})
+                                           .get("provider") == "host") else
                                        "decoding and drawing are done on the target's CPU",
                                        seen.get("cpu") or "?")),
              "the stream's %d Hz tone reached the host-side process in %d tenths of a second; path: target sound "
@@ -3439,12 +3466,20 @@ def check_rdke_device():
         call("serial", "org.rdk.System.1.getSerialNumber")
         call("make", "DeviceInfo.1.make")
         call("model", "DeviceInfo.1.modelid")
-        # Seen as STANDBY in two full runs of the checks (2026-11-25), the second time for all of
-        # the 60 s waited here; alone and after rdke-health or rdke-aamp the check gets ON. Cause not known.
+        # Seen as STANDBY in three full runs of the checks (2026-11-25, macOS, emulated graphics), for
+        # all of the 60 s waited here; alone, and after the six RDK-E checks before it, the check gets
+        # ON, and so it did in the one full run since the image is drawn by the host's GPU there.
+        # Cause not known; a failure now says what the target's power file and journal have.
         asked_at = time.monotonic()
         _wait(lambda: call("power", "org.rdk.System.1.getPowerState") or
               (seen["power"] or {}).get("powerState") == "ON", 60 * slow, 2)
         seen["power-waited"] = time.monotonic() - asked_at
+        if (seen["power"] if isinstance(seen["power"], dict) else {}).get("powerState") != "ON":
+            # What the target itself has about it, for the failure's message.
+            seen["power-file"] = asked("governor", "cat /run/tvemu/scaling_governor", r"\w*")
+            seen["power-journal"] = asked(
+                "powerlog", "journalctl -b -o cat --no-pager | grep -i -E 'standby|power ?state|pwrmgr' | tail -n 4 | "
+                            "cut -c1-55 | tr '\\n' '|'", r".*", seconds=40)
         call("lights", "org.rdk.FrontPanel.1.getFrontPanelLights")
 
     seen, kind, said = _rdke_session(body)
@@ -3472,8 +3507,9 @@ def check_rdke_device():
                                                                seen.get("serial-file")))
     _require(got("make").get("make") and got("model").get("sku"), "the device information service names no maker or "
              "model: %r, %r" % (seen.get("make"), seen.get("model")))
-    _require(got("power").get("powerState") == "ON", "the system service gives the power state as %r"
-             % seen.get("power"))
+    _require(got("power").get("powerState") == "ON", "the system service gives the power state as %r; the power "
+             "manager's file has %r, and the journal's last lines about it are: %s"
+             % (seen.get("power"), seen.get("power-file"), seen.get("power-journal")))
     _require("power_led" in (got("lights").get("supportedLights") or []), "the front panel service has no power "
              "light: %r" % seen.get("lights"))
     return ["the RDK-E image (%s) started in a %s guest, and RDK's services answered this host through Thunder: the "
@@ -3511,14 +3547,153 @@ def check_rdke_rate():
     """How many pictures a second reach the launcher's window from an RDK-E
     image: at its user interface's home screen, and while its browser plays
     the reference stream. The image's compositor shows a picture each
-    refresh of its 60 Hz mode, and the window is to get them."""
-    return _rdke_rate(None)
+    refresh of its 60 Hz mode, and the window is to get them. Asked with
+    emulated graphics, which is not what such an image gets unasked on every
+    host (macOS with the experimental QEMU: the host's GPU)."""
+    return _rdke_rate("emulated")
 
 
 def check_rdke_rate_host():
-    """The same with the host's GPU drawing for the target (--graphics host),
-    which an RDK-E target gets only when a run asks for it."""
+    """The same with the host's GPU drawing for the target (--graphics host)."""
     return _rdke_rate("host")
+
+
+RDKE_CLIP_SECONDS = 40
+RDKE_CLIP_PAGE = ("<!doctype html><html><head><style>html,body{margin:0;background:#000;overflow:hidden}"
+                  "video{width:100vw;height:100vh}</style></head><body>"
+                  "<video id=\"v\" src=\"clip.mp4\" muted autoplay playsinline></video><script>"
+                  "var v=document.getElementById('v');setInterval(function(){"
+                  "var q=v.getVideoPlaybackQuality?v.getVideoPlaybackQuality():{};"
+                  "location.hash='q_'+[Math.round(v.currentTime*1000),q.totalVideoFrames,q.droppedVideoFrames,"
+                  "v.videoWidth,v.videoHeight,v.paused?1:0].join('_')+'_e';},500);v.play();</script></body></html>")
+
+
+def _clip_1080p60(directory):
+    """Makes a 1920x1080 H.264 clip of 60 frames a second in `directory`
+    (clip.mp4), every frame different from the one before, with the FFmpeg
+    of this host's container image of the Debian target: the host itself
+    need not have one. Raises CheckUnavailable where that cannot be done."""
+    arch = host.host_arch()
+    if not image.is_current(image.load_manifest("container", arch)):
+        raise CheckUnavailable("the clip is made with the FFmpeg of the Debian target's container image, which is "
+                               "not built on this host (./emu build --mode container)")
+    # The clip is made inside a container and copied out of it: a directory of the host is not
+    # one the engine can write to on every host (an engine in a VM shares only some).
+    path, name = os.path.join(directory, "clip.mp4"), "emu-verify-clip-%d" % os.getpid()
+    try:
+        runtime = container.detect()
+        done = runtime.run("run", "--name", name, "--entrypoint", "ffmpeg",
+                           image.container_tag(arch), "-loglevel", "error", "-f", "lavfi", "-i",
+                           "testsrc2=size=1920x1080:rate=60", "-t", str(RDKE_CLIP_SECONDS), "-c:v", "libx264",
+                           "-preset", "veryfast", "-profile:v", "high", "-pix_fmt", "yuv420p", "-b:v", "8M",
+                           "-g", "60", "-movflags", "+faststart", "/tmp/clip.mp4", timeout=600)
+        if done.returncode == 0:
+            done = runtime.run("cp", "%s:/tmp/clip.mp4" % name, path, timeout=120)
+        runtime.run("rm", "-f", name)
+    except (EmuError, OSError, subprocess.SubprocessError) as error:
+        raise CheckUnavailable("the clip could not be made with the container image's FFmpeg: %s" % error)
+    if done.returncode != 0 or not os.path.isfile(path) or os.path.getsize(path) < 1 << 20:
+        raise CheckUnavailable("the clip could not be made with the container image's FFmpeg: %s"
+                               % (done.stderr.strip()[-300:] or "status %s" % done.returncode))
+    with open(os.path.join(directory, "clip.html"), "w") as handle:
+        handle.write(RDKE_CLIP_PAGE)
+    return path
+
+
+def check_rdke_rate_host_60():
+    """A 1920x1080 stream of 60 frames a second in the RDK-E image's browser,
+    with the host's GPU drawing: the launcher's window is to get the
+    compositor's pictures as with the reference stream, and the browser's
+    player says how many frames it showed and dropped. The clip is made on
+    this host and copied into the target, which plays it from a file."""
+    import functools
+    import http.server
+    with tempfile.TemporaryDirectory(prefix="emu-verify-") as directory:
+        binary = host_graphics_binary(vm.QEMU_BINARY[host.host_arch()])
+        found = graphics_probe(binary)
+        if not found["available"]:
+            raise CheckUnavailable("this host's QEMU (%s) does not show the launcher's window a display that the "
+                                   "host's GPU draws: %s" % (binary, found["reason"]))
+        size = os.path.getsize(_clip_1080p60(directory))
+
+        class Quiet(http.server.SimpleHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=directory))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        # The host's loopback address, as QEMU's user-mode network gives it to the target.
+        source = "http://10.0.2.2:%d" % server.server_address[1]
+
+        def body(viewer, typed, answer, seen, console, lock, slow):
+            asked = _rdke_asker(typed, answer, console, lock)
+            if not _rdke_ui_ready(asked, seen, slow):
+                return
+            typed("S() { curl -s -m 60 -d \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":1,\\\"method\\\":"
+                  "\\\"$1\\\"${2:+,\\\"params\\\":$2}}\" http://127.0.0.1:9998/jsonrpc; }")
+            time.sleep(10 * slow)
+            seen["cpus"] = asked("cpus", "nproc")
+            seen["virgl"] = asked("virgl", "dmesg | grep -c 'features: +virgl'")
+            seen["copied"] = asked("copy", "mkdir -p /tmp/clip && curl -s -o /tmp/clip/clip.mp4 %s/clip.mp4 && "
+                                           "curl -s -o /tmp/clip/clip.html %s/clip.html && stat -c %%s "
+                                           "/tmp/clip/clip.mp4" % (source, source), seconds=180)
+            if seen["copied"] != str(size):
+                seen["error"] = "the clip did not reach the target: %r of %d bytes" % (seen["copied"], size)
+                return
+            started = asked("launch", "S org.rdk.RDKShell.1.launch '{\"callsign\":\"HtmlApp\",\"type\":\"HtmlApp\","
+                            "\"uri\":\"file:///tmp/clip/clip.html\"}' | grep -c '\"success\":true'", seconds=180)
+            if started != "1":
+                seen["error"] = "org.rdk.RDKShell's launch did not start the page that plays the clip"
+                return
+
+            def quality():
+                """The player's time in ms, frames in all, frames dropped, width, height, paused."""
+                text = asked("q", "S HtmlApp.1.url | grep -o 'q_[0-9a-zA-Z_]*_e'", r"q_\w+_e", seconds=20) or ""
+                parts = text.split("_")[1:-1]
+                try:
+                    return [int(part) for part in parts] if len(parts) == 6 else None
+                except ValueError:
+                    return None
+            # Three seconds of the clip, so that the count starts in steady playing.
+            if not _wait(lambda: ((quality() or [0, 0])[1]) > 180, 120 * slow, 1):
+                seen["error"] = "the browser's player did not play the clip: %r" % quality()
+                return
+            first, start = quality(), time.time()
+            updates = viewer.ask(do="state").get("updates")
+            seen["idle"] = asked("idle", "top -b -n 2 -d %d | grep '^%%Cpu' | tail -n 1 | "
+                                         "sed 's/.*, *\\([0-9]*\\)[.0-9]* id.*/\\1/'" % RDKE_RATE_SECONDS,
+                                 seconds=60)
+            last, end = quality(), time.time()
+            after = viewer.ask(do="state").get("updates")
+            if not first or not last or updates is None or after is None:
+                seen["error"] = "the player or the window did not say what it showed: %r, %r" % (first, last)
+                return
+            seen.update({"seconds": end - start, "window": (after - updates) / (end - start),
+                         "shown": (last[1] - first[1] - (last[2] - first[2])) / (end - start),
+                         "frames": last[1] - first[1], "dropped": last[2] - first[2],
+                         "size": "%dx%d" % (last[3], last[4]), "stream-seconds": (last[0] - first[0]) / 1000.0})
+
+        try:
+            seen, kind, said = _rdke_session(body, graphics="host")
+        finally:
+            server.shutdown()
+    _require("window" in seen, "nothing was measured: %r" % {k: v for k, v in seen.items() if k != "outcome"})
+    drawn = seen["outcome"].environment["emulator"].get("graphics") or {}
+    _require(drawn.get("provider") == "host" and seen.get("virgl") == "1", "the host's GPU was asked for and the "
+             "target does not draw with it: the launcher chose %r" % drawn.get("provider"))
+    line = ("the RDK-E image (%s) started in a %s guest with %s CPUs, drawn by the host's GPU (%s), and its browser "
+            "played a %s H.264 clip of 60 frames a second from a file: over %.0f s the launcher's window got %.1f "
+            "pictures a second, and the player says it showed %.1f frames a second, %d of %d dropped, while the "
+            "stream's time moved %.1f s (the VM's CPUs were %s %% idle)"
+            % (said, kind, seen.get("cpus") or "?", drawn.get("device"), seen["size"], seen["seconds"], seen["window"],
+               seen["shown"], seen["dropped"], seen["frames"], seen["stream-seconds"], seen.get("idle") or "?"))
+    if kind != "host-native":
+        raise CheckUnavailable(line + "; no number is asked of a guest on a simulated CPU")
+    _require(seen["size"] == "1920x1080", line + ": the player does not give the clip's size")
+    _require(seen["window"] >= RDKE_RATE_FLOOR and seen["shown"] >= RDKE_RATE_FLOOR,
+             line + ": fewer than %d" % RDKE_RATE_FLOOR)
+    return [line, "both are at least %d, the least asked of a host-native guest whose compositor shows 60 (the "
+                  "same floor as for the reference stream; no number of its own is agreed for this clip)"
+            % RDKE_RATE_FLOOR]
 
 
 def _rdke_rate(asked_graphics):
@@ -3621,9 +3796,11 @@ def _command_checks():
         "rdke-device": (check_rdke_device, "9.4", "RDK's services describe the virtual device of an RDK-E image: "
                                                   "display, identity, power"),
         "rdke-rate": (check_rdke_rate, "9.4", "the launcher's window gets an RDK-E image's pictures at the pace "
-                                              "its compositor shows them"),
+                                              "its compositor shows them, with emulated graphics"),
         "rdke-rate-host": (check_rdke_rate_host, "9.4", "the same with the host's GPU drawing for the RDK-E "
                                                         "image (--graphics host)"),
+        "rdke-rate-host-60": (check_rdke_rate_host_60, "9.4", "the same for a 1920x1080 stream of 60 frames a "
+                                                              "second, with what the player says it showed"),
         "doctor": (check_doctor, "9.2", "the launcher shows what it finds on the host, and names what is missing"),
         "report-serve": (check_report_serve, "9.2", "the results command serves the page and all that it reads"),
         "report-page": (check_report_page, "9.2", "the results page shows every record and its sections"),
