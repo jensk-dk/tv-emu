@@ -384,9 +384,17 @@ in containers (Fedora, openSUSE Tumbleweed, Arch Linux).
   the launcher's window takes the GPU's buffers. What the build needs of
   the host and lacks (a compiler, Ninja, patch, the development files of
   GLib, pixman, GBM, EGL and libdrm) is installed with the package manager.
-  The launcher uses the build only when a run names it, as on macOS:
+  The launcher takes the build by itself for a run that asks for the host's
+  GPU, as on macOS, and says so; every other run keeps the installed QEMU,
+  which is what the host is evaluated with:
 
-      EMU_QEMU_DIR=build/host/qemu/bin ./emu run --mode vm --graphics host --window
+      ./emu run --mode vm --graphics host --window
+
+  `EMU_QEMU_DIR=build/host/qemu/bin` has every run use the build, and with
+  the variable naming another directory the launcher chooses nothing itself.
+  A build without the emulator of a simulated ARM target (no `--arm-targets`)
+  leaves that target to the installed QEMU. `./emu doctor` shows the QEMU
+  that a run with `--graphics host` gets.
 
   On the Kubuntu host the build took 3 minutes for the three emulators and
   takes 675 MB; that host had every package the build needs, so installing
@@ -413,6 +421,14 @@ in containers (Fedora, openSUSE Tumbleweed, Arch Linux).
 
   A 32-bit ARM target gets OpenGL ES on the host's GPU only: its kernel
   lacks what the Vulkan driver needs of the device.
+- **No Vulkan in a 32-bit ARM target at all** (image 0.6.2). Mesa's Vulkan
+  renderer for the CPU (lavapipe 25.0.7 of Debian 13) corrupts its memory
+  there as soon as a program draws: the graphics test and `mpv` both ended
+  on "malloc(): invalid size", with host and with emulated graphics, with
+  one thread, with the renderer's optimisations off and with either QEMU.
+  The image for that target is built without the renderer, and the
+  workloads and the checks `vulkan-vm-arm32` and `video-vulkan-vm-arm32`
+  say why. Those two checks still fail, as the Flutter ones do there.
 - **What the launcher says about the display.** A run with host graphics
   in the launcher's window prints one line that starts with `emu: window:`:
   how the target's display reached the window (the buffer's format, layout,

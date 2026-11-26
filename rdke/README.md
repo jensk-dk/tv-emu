@@ -169,6 +169,22 @@ everything here was found by building and running it, on the Linux host
   58.5 during the video, with `llvmpipe`'s eight threads 61 to 68 % busy.
   The fourth run, the first after the change, gave 35 and 34 with the same
   8 CPUs; what was different in it is not known.
+  *A home screen left visible under an application costs that much*, found
+  on 2026-11-25 with `./emu verify rdke-rate`, which got 35 pictures a
+  second of the video in every run (60 at the home screen). The check
+  started the page with the video through org.rdk.RDKShell's `launch`,
+  past the user interface. The user interface hides itself when it starts
+  an application (`launchApp` in its script calls `setVisibility` for its
+  own client with `false`); started past it, it stays visible, the
+  compositor draws it under the video at every refresh, and a picture then
+  takes longer than a refresh although no thread is busy all the time
+  (`llvmpipe`'s eight threads in the compositor 38 % each, the browser's
+  14 %). With `setVisibility` for `residentapp`, `false`, the same run went
+  from 35.3 to 59.7 at once. The check now makes that call, as the user
+  interface would, and gets 60.0 and 60.0 with the VM's CPUs 68 % and 49 %
+  idle. An application started some other way than by the user interface
+  has to hide the home screen itself, or be given more CPUs or the host's
+  GPU.
 - *The image keeps 3 MB of journal*, which its services fill in a minute or
   two. The stand-in for org.rdk.RDKShell therefore keeps its lines in
   `/run/tvemu/rdkshell.log` as well, and the checks read both.
@@ -1299,8 +1315,9 @@ unavailable with an older one where they can tell.
   from the image itself, with the picture in the launcher's window and the
   tone at the host, as `rdke-video` has them for the browser's own player.
 - `rdke-rate`: how many pictures a second reach the launcher's window, at
-  the home screen and while the browser plays the reference stream,
-  counted over 10 s each. A host-native guest has to give 50; for a guest
+  the home screen and while the browser plays the reference stream (with
+  the home screen hidden under it, as the user interface hides itself when
+  it starts an application), counted over 10 s each. A host-native guest has to give 50; for a guest
   on a simulated CPU the check gives the numbers and ends as unavailable.
 
 Every RDK-E check now starts the image with Thunder's and the SSH server's

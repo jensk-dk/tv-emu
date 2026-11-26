@@ -139,9 +139,14 @@ def qemu_dir_given():
 
 
 def experimental_qemu_dir():
-    """macOS: the directory of the experimental QEMU that setup.sh
-    --experimental-qemu builds (Homebrew's qemu-virgl, which is not linked
-    into the PATH), or None."""
+    """The directory of the experimental QEMU that setup.sh
+    --experimental-qemu builds, or None. On macOS that is Homebrew's
+    qemu-virgl, which is not linked into the PATH; on Linux the QEMU 11 that
+    the script builds from source into build/host/qemu."""
+    if host_os() == "linux":
+        candidate = host_tool_dir() / "qemu"
+        # The script writes this file last, into a build that is whole.
+        return str(candidate / "bin") if (candidate / "tv-emu-build").is_file() else None
     if host_os() != "macos":
         return None
     for directory in tool_path().split(os.pathsep):

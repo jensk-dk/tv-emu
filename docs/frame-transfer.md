@@ -273,8 +273,11 @@ Also seen:
   | QEMU 8.2.2 | 39 of 41 | `rdke-rate`; `resolution-vm` once, passed in two runs alone after |
   | QEMU 11.0.0 | 38 of 39 | `rdke-rate` |
 
-  `rdke-rate` fails without these changes as well: it plays the reference
-  stream with emulated graphics, gets 35 pictures a second and wants 50.
+  `rdke-rate` failed without these changes as well: it plays the reference
+  stream with emulated graphics, got 35 pictures a second and wants 50.
+  (Since 2026-11-25 it gets 60: the check left the home screen visible
+  under the video, which the target's CPU then drew at every refresh;
+  `rdke/README.md`.)
   The two checks more with QEMU 8.2.2 are `window-display` of the simulated
   ARM targets, which the QEMU 11.0.0 built here cannot run. `rdke-aamp`,
   `rdke-health` and `rdke-device` were unavailable in both: the RDK-E image
@@ -331,16 +334,43 @@ Vulkan, which with QEMU 8.2.2 is drawn by the target's CPU:
   kernel for it. The launcher no longer turns the Vulkan mapping on for
   that target, so its display device is set up as with QEMU 8.2.2.
   `vulkan-vm-arm32` and `video-vulkan-vm-arm32` fail with both QEMUs: the
-  target's CPU renderer for Vulkan ends there with "malloc(): invalid
-  size", and the compositor often ends with it and is started again.
-  `gles-vm-arm32` failed once with QEMU 11 ("lost the connection to the
-  Wayland compositor") and passed in two runs after; whether the Vulkan
-  mapping had a part in it is not known.
+  target's CPU renderer for Vulkan corrupts its memory there ("malloc():
+  invalid size"; README, "Linux"), so the image for that target no longer
+  has it and the two checks say that.
+- **The compositor of the 32-bit ARM target ends on a segmentation fault**
+  now and then while a video plays (Weston 14.0.2; the signal was caught
+  with a core handler in the target). It does so with host and with
+  emulated graphics, with either QEMU and with no Vulkan program run, so
+  it is the target's own fault and not QEMU's; where in Weston was not
+  found (the image has no debugger). The video workload starts the
+  compositor again and says so. That is also the likely cause of the one
+  `gles-vm-arm32` failure with QEMU 11 ("lost the connection to the
+  Wayland compositor"), which passed in three runs after.
 
 With these, on the same host: `video-wayland-vm`, `video-gles-vm`,
 `video-vulkan-vm` and `video-flutter-vm` pass with QEMU 11.0.0, the Vulkan
 case played by "Virtio-GPU Venus (NVIDIA GeForce RTX 4070)" with no frame
-dropped. FULLRUN
+dropped.
+
+Every check was then run twice on the final tree, on 2026-11-26 (image
+0.6.2, `./emu verify`): once with QEMU 11.0.0 for every VM
+(`EMU_QEMU_DIR=build/host/qemu/bin`), and once as the host is set up, where
+QEMU 8.2.2 runs the VMs and the launcher takes QEMU 11.0.0 only for a run
+with `--graphics host`. Both ended the same way: 145 of the 151 checks
+passed, 4 failed and 2 could not be run on this host.
+
+- **Failed, in both runs:** `vulkan-vm-arm32`, `video-vulkan-vm-arm32`,
+  `flutter-vm-arm32` and `video-flutter-vm-arm32`. The ARM32 image has
+  neither Vulkan nor a Flutter application, and the checks say why.
+- **Could not be run:** `redrat-device` (no RedRat receiver) and
+  `graphics-host-container` (the container engine's GPU node is NVIDIA's).
+- **Passed with QEMU 11.0.0 for everything:** all `video-*` and `gles-*`
+  checks of the three kinds of VM, with the host-native Vulkan cases on
+  "Virtio-GPU Venus (NVIDIA GeForce RTX 4070)" (2038.6 frames a second in
+  `vulkan-vm`, no frame dropped in `video-vulkan-vm`), the checks of the
+  STB simulator on ARM32, and the six checks of the RDK-E image.
+- **`rdke-rate` and `rdke-rate-host`** pass in both runs: 60.0 pictures a
+  second at the home screen, and 59.5 to 60.0 while the stream plays.
 
 ## Measured on the Mac
 
@@ -588,7 +618,10 @@ build, and is of no use on macOS (above).
    host's GPU has to be tried on a host with Mesa's drivers. The setup
    script provides it, with the ARM targets (`--experimental-qemu`), and
    the launcher's checks were run with it ("QEMU 11 from the setup
-   script", above).
+   script", above). Since 2026-11-25 a run that asks for the host's GPU
+   (`--graphics host`) takes that build by itself where it is installed
+   (`host_graphics_qemu` in [emulator/graphics.py](../emulator/graphics.py)),
+   as on macOS; a run that does not ask keeps the installed QEMU.
 
 ### macOS
 

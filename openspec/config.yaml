@@ -199,7 +199,10 @@ context: |
   it. Experimental host software is not a host dependency: the setup
   script installs it only when asked to with an option. On macOS (ARM64) that
   option installs a VM emulator build that maps OpenGL ES in VM mode to host
-  graphics acceleration.
+  graphics acceleration. On Linux it builds a VM emulator from source with
+  which a display that the host GPU draws reaches the launcher at the
+  display's refresh rate and Vulkan is mapped to the host GPU; a run that
+  asks for host graphics acceleration uses it.
   The simulated ARM64 and ARM32 guest CPU modes are slow and less complete, so
   what only they need on a host is not a host dependency either: the ARM
   system emulators, where they are separate from the host's own, and the

@@ -323,8 +323,18 @@ def _guest_arch(mode, arch):
     return host.host_arch() if mode == "container" or arch == "native" else arch
 
 
+def _require_vulkan(mode, arch):
+    """Says why where the image of this guest has no Vulkan."""
+    vulkan = image.definition().get("vulkan") or {}
+    guest = _guest_arch(mode, arch)
+    _require(guest in vulkan.get("architectures", (guest,)),
+             "the %s target image has no Vulkan: %s" % (guest, vulkan.get("missing")))
+
+
 def _technology(technology, mode, arch="native"):
     """One graphics technology renders and reaches the display, at 720p."""
+    if technology == "vulkan":
+        _require_vulkan(mode, arch)
     if technology == "flutter":
         flutter = image.definition()["source"]["flutter"]
         guest = _guest_arch(mode, arch)
@@ -403,6 +413,7 @@ def _graphics_host(mode):
     # macOS: the QEMU with host graphics is another build than the installed one
     # (graphics.host_graphics_qemu), which a run takes when it asks for the host's GPU.
     window = False
+    installed = probe["available"]
     if mode == "vm" and not probe["available"]:
         probe = graphics.probe_vm(graphics.host_graphics_binary(vm.QEMU_BINARY[host.host_arch()]))
     if not probe["available"]:
@@ -418,7 +429,8 @@ def _graphics_host(mode):
              "OpenGL ES was not rendered by the host GPU: %s" % evaluation["gles"][2].get("renderer"))
     # macOS: the QEMU with host graphics is another build than the installed one, which a run takes
     # only when it asks for the host's GPU. Unasked, the installed QEMU emulates.
-    on_request = mode == "vm" and graphics.host_graphics_qemu(vm.QEMU_BINARY[host.host_arch()])
+    # (Linux: the installed QEMU has host graphics as well, so there a run that does not ask gets it.)
+    on_request = mode == "vm" and not installed and graphics.host_graphics_qemu(vm.QEMU_BINARY[host.host_arch()])
     auto, auto_evaluation, _ = _technologies(mode, "native", "720p", ("gles",), window=window)
     if on_request:
         _require(auto["graphics"]["provider"] == "emulated", "a run that does not ask for the host's GPU got %r "
@@ -535,6 +547,8 @@ _video_runs = {}
 def _video(technology, mode, arch="native"):
     """Decoded video is rendered through one graphics technology and reaches
     the display, for each video codec."""
+    if technology == "vulkan":
+        _require_vulkan(mode, arch)
     if technology == "flutter":
         flutter = image.definition()["source"]["flutter"]
         guest = _guest_arch(mode, arch)
@@ -3537,6 +3551,16 @@ def _rdke_rate(asked_graphics):
                         "\"uri\":\"%s?muted\"}' | grep -c '\"success\":true'" % RDKE_VIDEO_PAGE, seconds=180)
         if started != "1":
             seen["error"] = "org.rdk.RDKShell's launch did not start the page that plays the reference stream"
+            return
+        # The image's user interface hides itself when it starts an application (launchApp in its
+        # script: setVisibility of its own client, false). This check starts the page past it, so
+        # it does that part too. Left visible, the home screen is drawn under the video each
+        # refresh, and with the target's CPU drawing a picture then takes longer than a refresh:
+        # 35 a second where it is 60 with it hidden (Linux, Core i7-10700K, 8 CPUs; rdke/README.md).
+        hidden = asked("hide", "S org.rdk.RDKShell.1.setVisibility '{\"client\":\"residentapp\",\"visible\":false}'"
+                       " | grep -c '\"success\":true'")
+        if hidden != "1":
+            seen["error"] = "org.rdk.RDKShell's setVisibility did not hide the user interface under the page"
             return
         playing = _wait(lambda: asked("player", "S HtmlApp.1.url | grep -c '#playing-%s-'" % RDKE_VIDEO_SIZE) == "1",
                         120 * slow, 1)

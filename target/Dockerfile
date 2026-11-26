@@ -193,6 +193,18 @@ ARG IMAGE_VERSION=0.0.0
 ARG DEFINITION_SHA256=unknown
 ARG BASE_IMAGE
 ARG APT_SNAPSHOT=""
+# No Vulkan in a 32-bit ARM target: Mesa's Vulkan renderer for the CPU
+# (lavapipe 25.0.7, Debian 13) corrupts its memory there as soon as a program
+# draws ("malloc(): invalid size", with the graphics test and with mpv, and
+# the compositor often ends with it), and the virtual GPU's Vulkan needs what
+# that target's kernel does not give. So the renderer is not offered, and the
+# workloads say why.
+RUN if [ "$(dpkg --print-architecture)" = armhf ]; then \
+      rm -f /usr/share/vulkan/icd.d/lvp_icd.*.json; \
+      mkdir -p /opt/emu/vulkan; \
+      echo "the arm32 target image has no Vulkan: Mesa's Vulkan renderer for the CPU (lavapipe) corrupts its memory on 32-bit ARM, and the virtual GPU's Vulkan needs a 64-bit target" \
+        > /opt/emu/vulkan/UNAVAILABLE; \
+    fi
 RUN /opt/emu/write-identity "$IMAGE_NAME" "$IMAGE_VERSION" "$DEFINITION_SHA256" "$BASE_IMAGE" "$APT_SNAPSHOT"
 ENV EMU_MODE=container
 ENTRYPOINT ["/opt/emu/init"]
@@ -232,6 +244,18 @@ ARG IMAGE_VERSION=0.0.0
 ARG DEFINITION_SHA256=unknown
 ARG BASE_IMAGE
 ARG APT_SNAPSHOT=""
+# No Vulkan in a 32-bit ARM target: Mesa's Vulkan renderer for the CPU
+# (lavapipe 25.0.7, Debian 13) corrupts its memory there as soon as a program
+# draws ("malloc(): invalid size", with the graphics test and with mpv, and
+# the compositor often ends with it), and the virtual GPU's Vulkan needs what
+# that target's kernel does not give. So the renderer is not offered, and the
+# workloads say why.
+RUN if [ "$(dpkg --print-architecture)" = armhf ]; then \
+      rm -f /usr/share/vulkan/icd.d/lvp_icd.*.json; \
+      mkdir -p /opt/emu/vulkan; \
+      echo "the arm32 target image has no Vulkan: Mesa's Vulkan renderer for the CPU (lavapipe) corrupts its memory on 32-bit ARM, and the virtual GPU's Vulkan needs a 64-bit target" \
+        > /opt/emu/vulkan/UNAVAILABLE; \
+    fi
 RUN /opt/emu/write-identity "$IMAGE_NAME" "$IMAGE_VERSION" "$DEFINITION_SHA256" "$BASE_IMAGE" "$APT_SNAPSHOT"
 
 # ------------------------------------------------------------- vmpack ---

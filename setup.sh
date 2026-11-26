@@ -146,7 +146,8 @@ REDRAT_RULE=/etc/udev/rules.d/70-tv-emu-redrat.rules
 # the host's GPU to 30 pictures a second. Each source is taken at one version:
 # QEMU's archive by its checksum, the others by their commit. libepoxy and
 # libslirp are built as well, so that the host needs no development package
-# of them. The launcher uses the build only when EMU_QEMU_DIR names it.
+# of them. The launcher uses the build for a run with --graphics host, and
+# for any run when EMU_QEMU_DIR names it.
 LINUX_QEMU_DIR="$PROJECT_ROOT/build/host/qemu"
 LINUX_QEMU_VERSION=11.0.0
 LINUX_QEMU_SHA256=c04ca36012653f32d11c674d370cf52a710e7d3f18c2d8b63e4932052a4854d6
@@ -553,7 +554,7 @@ check_experimental_qemu_linux() {
   if [ -x "$bin" ]; then
     version=$("$bin" --version 2>/dev/null | head -1)
     if linux_qemu_current; then
-      ok "QEMU built by this script: ${version#QEMU emulator version } with virglrenderer 1.3.0 ($(sed -n 2p "$LINUX_QEMU_DIR/tv-emu-build")); the launcher uses it when EMU_QEMU_DIR=$LINUX_QEMU_DIR/bin"
+      ok "QEMU built by this script: ${version#QEMU emulator version } with virglrenderer 1.3.0 ($(sed -n 2p "$LINUX_QEMU_DIR/tv-emu-build")); the launcher takes it for a run with --graphics host (it is in $LINUX_QEMU_DIR/bin)"
     elif [ "$EXPERIMENTAL_QEMU" = 1 ]; then
       optional experimental-qemu "QEMU built by this script: the build in $LINUX_QEMU_DIR is not the one this script makes now (${version:-it does not run}; other sources, or without an emulator that is asked for); it is built again"
     else
@@ -1147,7 +1148,7 @@ SOURCES
   record qemu-tree "$final"
   cd "$PROJECT_ROOT" && rm -rf "$work"
   "$final/bin/$QEMU_NATIVE" --version > /dev/null 2>&1 || { info "  ! the QEMU in $final does not run"; return 1; }
-  said "installed in $final; the launcher uses it when EMU_QEMU_DIR=$final/bin"
+  said "installed in $final; the launcher takes it for a run with --graphics host"
 )
 
 in_group() { id -nG "$(id -un)" | tr ' ' '\n' | grep -qx "$1"; }
@@ -1894,8 +1895,8 @@ else
     info "QEMU $LINUX_QEMU_VERSION is built from source, with virglrenderer, libepoxy and libslirp, into"
     info "$LINUX_QEMU_DIR ($(linux_qemu_targets)). That takes some minutes and"
     info "some GB of disk while it runs. What the build needs of the host and lacks is installed"
-    info "with the system package manager (root). The launcher uses the build only when"
-    info "EMU_QEMU_DIR names it."
+    info "with the system package manager (root). The launcher uses the build only for a"
+    info "run with --graphics host."
   fi
 fi
 if is_optional experimental-qemu; then

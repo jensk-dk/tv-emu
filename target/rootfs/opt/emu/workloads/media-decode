@@ -55,6 +55,8 @@ AREA = "audio_video_decoding"
 TESTS = ("video", "audio", "playback", "sound")
 DEFAULT_TESTS = ("video", "audio", "playback")
 TECHNOLOGIES = ("wayland", "gles", "vulkan", "flutter")
+# Where the image says why it has no Vulkan (target/Dockerfile).
+VULKAN_UNAVAILABLE = "/opt/emu/vulkan/UNAVAILABLE"
 # Played by default: every video codec, and every way media arrives.
 DEFAULT_PLAYED = ("mpeg2-mp2ts", "avc-mp4", "hevc-fragments")
 FLUTTER = "/opt/emu/flutter"
@@ -325,6 +327,9 @@ def renderer_of(technology, display):
 
 def play_mpv(stream, technology, width, height, audio, limit):
     """Play through mpv; returns (counters, error)."""
+    if technology == "vulkan" and os.path.exists(VULKAN_UNAVAILABLE):
+        with open(VULKAN_UNAVAILABLE) as handle:
+            return None, handle.read().strip()
     source, injected = source_of(stream)
     arguments = output_arguments(technology, width, height) + ["--ao=alsa" if audio else "--ao=null", source]
     player = Mpv(arguments, subprocess.PIPE if injected else subprocess.DEVNULL)

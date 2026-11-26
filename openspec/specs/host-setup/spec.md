@@ -147,12 +147,18 @@ The ARM64 and ARM32 guest CPU modes run on a simulated CPU, which is slow, and n
 
 ### Requirement: Install experimental host software only on request
 
-Experimental host software adds a capability to the emulator on a host and is not a host dependency. The setup script MUST install experimental host software only when the developer asks for it with an option of the script, and MUST NOT report it as a missing host dependency. On a macOS host with an ARM64 CPU, the setup script MUST offer such an option for a build of the VM emulator that maps OpenGL ES graphics in VM mode to host OS graphics acceleration.
+Experimental host software adds a capability to the emulator on a host and is not a host dependency. The setup script MUST install experimental host software only when the developer asks for it with an option of the script, and MUST NOT report it as a missing host dependency. On a macOS host with an ARM64 CPU, the setup script MUST offer such an option for a build of the VM emulator that maps OpenGL ES graphics in VM mode to host OS graphics acceleration. On a Linux host, the setup script MUST offer such an option for a build of the VM emulator, made from source at pinned versions, with which a display that the host GPU draws reaches the launcher at the display's refresh rate and Vulkan graphics in VM mode are mapped to host OS graphics acceleration; with the option for the simulated ARM targets, the build MUST have their emulators as well.
 
 #### Scenario: Install the experimental VM emulator build on request
 
 - WHEN the setup script is run with the experimental option on a macOS host with an ARM64 CPU
 - THEN it installs the experimental VM emulator build
+
+#### Scenario: Build the experimental VM emulator on a Linux host on request
+
+- WHEN the setup script is run with the experimental option on a Linux host
+- THEN it builds the experimental VM emulator into the project's build directory, beside the installed VM emulator
+- AND a run that asks for host OS graphics acceleration uses that build
 
 #### Scenario: Run setup without the experimental option
 

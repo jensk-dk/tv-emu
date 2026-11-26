@@ -126,19 +126,27 @@ def host_graphics_qemu(name):
     """The directory of another QEMU build that a run asking for the host's
     GPU (--graphics host) takes `name` from, or None for the installed one.
 
-    That is the experimental QEMU on macOS (host.experimental_qemu_dir),
-    where the installed QEMU has no display device for the host's GPU and
-    that one has. Nothing is chosen where EMU_QEMU_DIR names a build: that
-    is the user's choice. A run that does not ask for the host's GPU keeps
-    the installed QEMU, which is what the host is evaluated with."""
-    if host.host_os() != "macos" or host.qemu_dir_given():
+    That is the experimental QEMU (host.experimental_qemu_dir), where
+    setup.sh --experimental-qemu installed it. On macOS it is taken where
+    the installed QEMU has no display device for the host's GPU. On Linux it
+    is taken although the installed one has such a device: a QEMU before 11
+    holds a target that draws with the host's GPU to 30 pictures a second,
+    and the build maps Vulkan too (docs/frame-transfer.md). A build that
+    lacks the emulator for a guest leaves that guest to the installed QEMU.
+    Nothing is chosen where EMU_QEMU_DIR names a build: that is the user's
+    choice. A run that does not ask for the host's GPU keeps the installed
+    QEMU, which is what the host is evaluated with."""
+    system = host.host_os()
+    if system not in ("macos", "linux") or host.qemu_dir_given():
         return None
-    usual = shutil.which(name, path=host.tool_path())
-    if usual and "virtio-gpu-gl-pci" in _qemu_output(usual, "-device", "help"):
-        return None
+    if system == "macos":
+        usual = shutil.which(name, path=host.tool_path())
+        if usual and "virtio-gpu-gl-pci" in _qemu_output(usual, "-device", "help"):
+            return None
     directory = host.experimental_qemu_dir()
     other = directory and (shutil.which(name, path=directory) or
-                           (name == "qemu-system-arm" and shutil.which("qemu-system-aarch64", path=directory)))
+                           (system == "macos" and name == "qemu-system-arm"
+                            and shutil.which("qemu-system-aarch64", path=directory)))
     if other and "virtio-gpu-gl-pci" in _qemu_output(other, "-device", "help"):
         return directory
     return None

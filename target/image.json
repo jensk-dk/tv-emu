@@ -1,6 +1,6 @@
 {
   "name": "emu-target-debian",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Linux client OS image that simulates the target OS in container and VM modes.",
   "source": {
     "distribution": "Debian 13 (trixie)",
@@ -19,6 +19,10 @@
       "package_sha256": "3dbcd4dd957cf0bb885d4059e66b87f56a17c90f00c697d21fbdad1273d8005c",
       "licence": "BSD-3-Clause"
     }
+  },
+  "vulkan": {
+    "architectures": ["x86_64", "arm64"],
+    "missing": "Mesa's Vulkan renderer for the CPU (lavapipe 25.0.7) corrupts its memory on 32-bit ARM, and the virtual GPU's Vulkan needs a 64-bit target"
   },
   "architectures": {
     "x86_64": {"platform": "linux/amd64", "debian_arch": "amd64", "kernel_package": "linux-image-amd64"},

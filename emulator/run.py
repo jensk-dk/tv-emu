@@ -374,11 +374,14 @@ def launch(opts):
                 with open(data_disk, "wb") as handle:
                     handle.truncate(int(opts.options.get("data-disk-mb", DEFAULT_DATA_DISK_MB)) * 1024 * 1024)
             if opts.graphics == "host":
-                # macOS: the experimental QEMU, where it is installed and the usual one has no host graphics.
+                # The experimental QEMU, where setup.sh installed it: on macOS the usual one has no
+                # host graphics, on Linux it holds the target to 30 pictures a second and has no Vulkan.
                 host.RUN_QEMU_DIR = graphics.host_graphics_qemu(vm.QEMU_BINARY[guest])
                 if host.RUN_QEMU_DIR:
                     outcome.notes.append("--graphics host: QEMU is the experimental build in %s, since the "
-                                         "installed one cannot use the host's GPU" % host.RUN_QEMU_DIR)
+                                         "installed one %s" % (host.RUN_QEMU_DIR, (
+                                             "cannot use the host's GPU" if host.host_os() == "macos" else
+                                             "holds a display that the host's GPU draws to 30 pictures a second")))
             qemu = host.require_tool(vm.QEMU_BINARY[guest], "VM mode with a %s guest" % guest)
             virtio_sound = True
             if opts.drivers.get("audio") in ("emulated", "host"):
