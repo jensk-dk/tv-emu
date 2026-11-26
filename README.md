@@ -648,8 +648,9 @@ What the verified hosts offer; `./emu doctor` shows it for any host:
   - With a window the display cannot be captured, as on Windows.
 - Linux on x86-64, container mode: emulated. The engine has the GPU's render
   node, but it belongs to NVIDIA's driver, which the target's graphics stack
-  (Mesa) cannot render with. A GPU with a Mesa driver (Intel, AMD) is still to
-  be run.
+  (Mesa) cannot render with. On a host with an Intel GPU (Mesa's driver,
+  Podman) the target draws on the GPU, with OpenGL ES and with Vulkan, and
+  `graphics-host-container` passes (2026-11-26; one host, that check only).
 - Windows on x86-64, VM mode with `--window`: host acceleration, in QEMU's
   own window. QEMU 11.1.0
   maps OpenGL ES to the host GPU and shows it in its window. On an NVIDIA GPU

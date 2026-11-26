@@ -697,9 +697,20 @@ and QEMU chooses by that.
 - **Whether a picture is ever shown half drawn.** None was seen in the
   captures; nothing looked for one. The target shows its pictures from two
   buffers in turn, so the one the window draws from is not being written.
-- **Other drivers.** Only the NVIDIA driver 595 on X11 was tried. Mesa's
-  drivers (Intel, AMD), a Wayland session and a screen with a scale factor
-  were not.
+- **Other drivers.** The NVIDIA driver 595 on X11 and, on 2026-11-26,
+  Mesa's Intel driver in a Wayland session were tried (the next point).
+  AMD's, and a screen with a scale factor, were not.
+- **An Intel GPU, tried once** (`linux-x86_64@intel-core-ultra-7-265u`,
+  Ubuntu 24.04.5, Mesa 25.2.8, Wayland session, Podman 4.9.3, QEMU 8.2.2,
+  image 0.6.2; the user ran it and sent the output). The window took the
+  display as a GPU buffer (format XB24, layout 0, with its layout named),
+  and `window-display-vm`, `graphics-host-vm` and `graphics-host-container`
+  pass. In container mode the target drew on the GPU itself: 1827.5 frames
+  a second with OpenGL ES at 1280x720, and Vulkan on the GPU. In the VM,
+  through virgl, OpenGL ES got 240.2 at 1280x720 and 113.0 at 1920x1080,
+  and Vulkan was drawn by the target's CPU, since QEMU 8.2.2 maps none.
+  The experimental QEMU was not installed there, so QEMU 11 and Vulkan on
+  an Intel GPU from a VM are not tried, and no other check was run.
 - **Anything on Windows.** All of it is read from the source and from the
   launcher's earlier notes.
 - **On macOS:** everything listed as not measured under "Measured on the
