@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RDK-E in the tv-emu emulator</title>
+<style>
+@page { size: A4; margin: 18mm 17mm 18mm 17mm;
+  @bottom-center { content: counter(page); font: 9pt Helvetica, Arial, sans-serif; color: #666; } }
+@page :first { @bottom-center { content: ""; } }
+* { box-sizing: border-box; }
+html { font: 10pt/1.42 Helvetica, Arial, sans-serif; color: #1b1f24; }
+body { margin: 0; }
+h1 { font-size: 25pt; line-height: 1.15; margin: 0 0 4mm; color: #12324f; }
+h2 { font-size: 15pt; margin: 0 0 3mm; color: #12324f; border-bottom: 1.2pt solid #12324f; padding-bottom: 1.2mm; break-after: avoid; }
+h3 { font-size: 11.5pt; margin: 5mm 0 1.5mm; color: #12324f; break-after: avoid; }
+p { margin: 0 0 2.4mm; }
+ul, ol { margin: 0 0 2.6mm; padding-left: 5mm; }
+li { margin-bottom: 1mm; }
+section { margin-top: 9mm; }
+section.first { margin-top: 0; break-after: page; }
+code { font: 8.6pt Menlo, Consolas, monospace; background: #f0f2f5; padding: 0 1.2pt; border-radius: 2pt; }
+pre { font: 8.4pt/1.4 Menlo, Consolas, monospace; background: #f0f2f5; padding: 2.5mm 3mm; border-radius: 2pt; margin: 0 0 3mm; white-space: pre-wrap; break-inside: avoid; }
+table { border-collapse: collapse; width: 100%; margin: 1mm 0 4mm; font-size: 9pt; line-height: 1.34; }
+th { text-align: left; background: #12324f; color: #fff; padding: 1.5mm 2mm; font-weight: 600; vertical-align: bottom; }
+td { padding: 1.5mm 2mm; border-bottom: 0.5pt solid #c9d0d8; vertical-align: top; }
+tr { break-inside: avoid; }
+thead { display: table-header-group; }
+.note { background: #fff6dd; border-left: 3pt solid #d99a00; padding: 2.2mm 3mm; margin: 0 0 3mm; break-inside: avoid; }
+.lead { font-size: 11pt; }
+.cover { height: 250mm; display: flex; flex-direction: column; }
+.cover .sub { font-size: 13pt; color: #44546a; margin-bottom: 8mm; }
+.cover img { width: 100%; border: 0.5pt solid #999; margin-bottom: 2mm; }
+.cap { font-size: 8.4pt; color: #555; margin: 0 0 4mm; }
+.meta { margin-top: auto; font-size: 9pt; color: #555; border-top: 0.5pt solid #999; padding-top: 3mm; }
+.kpis { display: flex; gap: 3mm; margin: 2mm 0 5mm; }
+.kpi { flex: 1; border: 0.7pt solid #12324f; border-radius: 2pt; padding: 2.5mm 3mm; }
+.kpi b { display: block; font-size: 15pt; color: #12324f; }
+.kpi span { font-size: 8.6pt; color: #444; }
+.ok { color: #176b2c; font-weight: 600; }
+.part { color: #9a6200; font-weight: 600; }
+.no { color: #a32020; font-weight: 600; }
+.two { display: flex; gap: 5mm; }
+.two > div { flex: 1; }
+.pics { display: flex; gap: 4mm; margin-bottom: 1mm; }
+.pics img { width: 100%; border: 0.5pt solid #999; display: block; }
+.pics > div { flex: 1; }
+/* diagrams */
+.two { break-inside: avoid; }
+.dia { break-inside: avoid; margin: 2mm 0 4mm; border: 0.6pt solid #b8c1cc; border-radius: 2pt; padding: 3mm; background: #fafbfc; }
+.dia .t { font-size: 8.4pt; font-weight: 700; color: #44546a; text-transform: uppercase; letter-spacing: .4pt; margin-bottom: 1.5mm; }
+.box { border: 0.7pt solid #12324f; background: #fff; border-radius: 2pt; padding: 1.4mm 2mm; font-size: 8.6pt; line-height: 1.28; text-align: center; }
+.box small { display: block; color: #555; font-size: 7.6pt; }
+.box.g { background: #e6f1ea; border-color: #2c6e49; }
+.box.h { background: #e7eef7; }
+.box.w { background: #fff1d6; border-color: #a66b00; }
+.arr { text-align: center; font-size: 9pt; line-height: 1; color: #12324f; margin: .6mm 0; }
+.row { display: flex; gap: 2mm; align-items: stretch; }
+.row > .box, .row > .col { flex: 1; }
+.rarr { flex: 0 0 auto !important; align-self: center; color: #12324f; font-size: 11pt; }
+.frame { border: 0.7pt dashed #44546a; border-radius: 2pt; padding: 2mm; }
+.frame > .t { margin-bottom: 1.2mm; }
+.toc { columns: 2; column-gap: 8mm; font-size: 9.6pt; padding-left: 5mm; }
+</style>
+</head>
+<body>
+
+<section class="first cover">
+  <h1>RDK-E in the tv-emu emulator</h1>
+  <div class="sub">What was done to make it run, how it works, what works and what does not, and where it could go</div>
+  <img src="home.jpg" alt="">
+  <p class="cap">RDK's reference user interface (rdke-refui 5.0.24) at its Home screen in the emulator's window, 1920x1080, drawn by the VM's CPU. Captured on 2026-11-23 on macOS (ARM64), host-native.</p>
+  <div class="kpis">
+    <div class="kpi"><b>60</b><span>pictures a second at the home screen on both hosts, by the VM's CPU or the host's GPU</span></div>
+    <div class="kpi"><b>8145</b><span>Yocto tasks for RDK-E's whole middleware as 64-bit programs, none failing</span></div>
+    <div class="kpi"><b>17</b><span>source patches in the layer; most other changes are build settings</span></div>
+    <div class="kpi"><b>2</b><span>hosts, each host-native: macOS on Apple Silicon and Linux on x86-64</span></div>
+  </div>
+  <p class="lead">An image of RDK-E, RDK's stack for IP video devices, boots in the emulator's virtual machine at the host's own CPU speed on two hosts: as an ARM64 machine on a Mac, and as an x86-64 machine on Linux with KVM. It runs Thunder with RDK's plug-ins, RDK's window manager on Westeros, the WPE browser, RDK's reference user interface, and video with sound through both the browser's own player and RDK's player (AAMP). It is steered with the emulator's remote control.</p>
+  <p>This is a trial and a proposal. No agreed requirement asks for RDK-E beyond the launcher option that boots such an image, and the image is outside the evaluation matrix. Nothing of it has been built or run on Windows, on an Intel Mac or on Linux on ARM64.</p>
+  <div class="meta">Status as of 2026-11-26. Sources of every statement: <code>rdke/README.md</code>, the layer <code>rdke/meta-tvemu-rdke</code>, and task 9.4 in <code>openspec/changes/staged-emulator-delivery/tasks.md</code>. Dates in the text say when a thing was run. Ninth edition: the power state fault shown and repaired, and why the image has no 4K picture.</div>
+</section>
+
+<section>
+<h2>Contents and summary</h2>
+<ol class="toc">
+  <li>Contents and summary</li>
+  <li>What was built: the machine and the images</li>
+  <li>How the Yocto build is made</li>
+  <li>The vendor layer for a virtual device</li>
+  <li>Patches and other changes, and why</li>
+  <li>Graphics, video, sound and keys</li>
+  <li>macOS and Linux hosts</li>
+  <li>What works</li>
+  <li>What does not work, and what is missing</li>
+  <li>Future directions</li>
+  <li>Versions and sources</li>
+</ol>
+
+<h3>The short version</h3>
+<ul>
+  <li><b>Two new machines, not ports of the Pi.</b> The Yocto machine <code>tvemu-arm64-rdke</code> joins what makes a machine an RDK-E machine (taken from the Raspberry Pi 4 reference) with the hardware of QEMU's <code>virt</code> board (taken from <code>qemuarm64</code>) and the devices of the emulator's VM. Its twin <code>tvemu-x86-64-rdke</code> has the same RDK-E half on QEMU's <code>q35</code> board (<code>qemux86-64</code>), for x86-64 hosts.</li>
+  <li><b>64-bit programs throughout.</b> RDK-E is built with a 32-bit userland. Apple's CPUs do not run 32-bit ARM code, so a host-native VM on a Mac needs 64-bit programs. Building RDK-E that way is where most of the changes came from, and the same changes carried the x86-64 machine.</li>
+  <li><b>A vendor layer made from the Pi's.</b> The ten components RDK-E expects of a vendor are built from the Pi's sources, with files of a "virtual device" standing in for hardware a VM does not have.</li>
+  <li><b>Software rendering and decoding.</b> Mesa's <code>llvmpipe</code> draws and FFmpeg decodes, both on the VM's CPU. After three repairs in Westeros and the window manager's pacing, the display gets 60 pictures a second. On the Linux host the VM needs 8 CPUs for that during 1080p video, where the Mac needs 4, and an application has to hide the home screen under it, as the user interface does for those it starts. This is what a run gets unasked, except on a Mac with the experimental QEMU.</li>
+  <li><b>The host's GPU.</b> With <code>--graphics host</code> the host's GPU draws, and the launcher's own window shows that display on both hosts at 60 pictures a second: on Linux with QEMU 11, on the Mac with a patched experimental QEMU. The setup script builds either on request (<code>--experimental-qemu</code>), and the launcher takes the build by itself for such a run, on both hosts since 2026-11-25. On a Mac where that build is installed, an RDK-E image gets the host's GPU unasked since 2026-11-26. The VM's CPUs are then 79 to 99 % idle.</li>
+  <li><b>The application layer is the old way.</b> The browser and the user interface are in the image directly, with a stand-in for RDKShell. RDK-E's new way (applications as signed packages run in containers by the app managers) is present but has nothing to run.</li>
+</ul>
+
+<h3>Status at a glance</h3>
+<table>
+<thead><tr><th style="width:34%">Area</th><th style="width:14%">State</th><th>Remark</th></tr></thead>
+<tbody>
+<tr><td>Boot to RDK's user interface</td><td class="ok">works</td><td>Home screen 10 s after systemd starts. On the Mac a check finds no failed unit, no restart and no crash</td></tr>
+<tr><td>Thunder and the middleware's plug-ins</td><td class="ok">works</td><td>Two plug-ins are deactivated, both by design (AVOutput is for televisions; nothing starts UserPreferences)</td></tr>
+<tr><td>Graphics (Westeros, window manager, browser)</td><td class="ok">works</td><td>60 pictures a second at the home screen on macOS and Linux; software rendering</td></tr>
+<tr><td>Video and sound</td><td class="ok">works</td><td>H.264/AAC in the browser (checked automatically); HLS with AAMP (seen by hand)</td></tr>
+<tr><td>Remote control keys</td><td class="ok">works</td><td>RedRat input is refused for this image</td></tr>
+<tr><td>Applications from the Home screen</td><td class="part">in part</td><td>Lightning and HTML applications start; YouTube, Netflix, Amazon cannot</td></tr>
+<tr><td>Device interfaces (display, power, identity)</td><td class="part">in part</td><td>Display, resolutions and identity are reported rightly and checked. CEC, deep sleep, Miracast, Bluetooth have nothing behind them</td></tr>
+<tr><td>Reaching the target from the host</td><td class="ok">works</td><td>SSH, Thunder's JSON-RPC and the web inspector through forwarded ports, when a run asks for them</td></tr>
+<tr><td>App managers and containers</td><td class="no">not working</td><td>All activated; no packages, and four things the runtime needs are missing</td></tr>
+<tr><td>Linux on x86-64, host-native</td><td class="ok">works</td><td>The x86-64 machine under KVM. All eight RDK-E checks of that host's record pass on 2026-11-26. <code>rdke-rate</code> passes since the check hides the home screen under the video: 59.5 pictures a second where it got 35</td></tr>
+<tr><td>Host GPU for the image</td><td class="ok">works</td><td>In the launcher's window on both hosts, at 60 pictures a second, checked automatically on both, with the experimental QEMU of each host, which the launcher takes by itself. macOS: what an RDK-E image gets unasked where that QEMU is installed; <code>--graphics emulated</code> asks for the other. Linux: on request with <code>--graphics host</code>; without the built QEMU 11 the host's QEMU 8.2.2 gives 30</td></tr>
+<tr><td>Windows, Intel Mac, Linux on ARM64, simulated CPU</td><td class="no">not tried</td><td>Neither built nor run</td></tr>
+<tr><td>RDK-E's own 32-bit userland</td><td class="no">not built</td><td>Cannot run host-native on a Mac in any case</td></tr>
+</tbody>
+</table>
+</section>
+
+<section>
+<h2>What was built: the machine and the images</h2>
+<p>RDK-E is built with Yocto (release "kirkstone") in three layers that RDK builds apart and joins as packages: vendor, middleware and application. A device is described by a <i>machine</i> definition and a vendor layer that implements the hardware side. RDK-E's public reference is the Raspberry Pi 4.</p>
+
+<h3>The machine <code>tvemu-arm64-rdke</code></h3>
+<table>
+<thead><tr><th style="width:26%">Taken from</th><th>What</th></tr></thead>
+<tbody>
+<tr><td>The Pi's RDK-E machine (<code>raspberrypi4-64-rdke</code>)</td><td>The includes of RDK-E's common, middleware and application layers; the product settings (systemd, no secure video path, OpenSSL, application paths); the list of virtual providers the middleware expects; the kernel options RDK-E needs (binder, dm-verity, EROFS, AppArmor)</td></tr>
+<tr><td>openembedded-core's <code>qemuarm64</code></td><td>QEMU's <code>virt</code> board, the <code>linux-yocto</code> 5.15 kernel, the consoles, Mesa as the graphics stack, a bare ext4 root file system with the kernel beside it</td></tr>
+<tr><td>Neither</td><td>The VM's devices built into the kernel (virtio disk, network, GPU, input, sound), <code>/dev/dri/card0</code> as the display, Mesa with <code>virgl</code> and <code>llvmpipe</code></td></tr>
+<tr><td>Left out of the Pi's</td><td>Boot firmware, device trees, SD card image, Wi-Fi and Bluetooth firmware, Broadcom's graphics libraries, the Android kernel</td></tr>
+</tbody>
+</table>
+
+<h3>The machine <code>tvemu-x86-64-rdke</code></h3>
+<p>The x86-64 twin is the same fusion with openembedded-core's <code>qemux86-64</code> in the place of <code>qemuarm64</code>: QEMU's <code>q35</code> board, the kernel as <code>bzImage</code>, the console on <code>ttyS0</code>, programs for the <code>core2-64</code> tune, which every x86-64 host CPU runs. The RDK-E half is the ARM64 machine's, file for file, and the kernel options are split into one file for both boards and one for each. It was made on 2026-11-23 so that a Linux host on x86-64 runs RDK-E host-native under KVM instead of on a simulated ARM CPU. RDK-E has no public x86 build, so everything about it was found by building and running it.</p>
+
+<h3>Why 64-bit</h3>
+<p>The Pi runs a 64-bit kernel with a 32-bit userland, and RDK-E's package feeds are built that way. A host-native VM runs the guest's code on the host's CPU, and Apple's CPUs do not execute 32-bit ARM code at all. The machine has a setting, <code>TVEMU_USERLAND</code>, with <code>64</code> as the default. The value <code>32</code> is RDK-E's own arrangement, for a host whose CPU runs 32-bit ARM code or for a simulated CPU; it has never been built here. The x86-64 machine has 64-bit programs only.</p>
+<p>One consequence: RDK's prebuilt middleware and application packages do not fit, so everything is built from source in one build.</p>
+
+<h3>The images, each a step on the way</h3>
+<table>
+<thead><tr><th style="width:23%">Image</th><th>Adds</th><th style="width:11%">Tasks</th><th style="width:11%">Root file system</th></tr></thead>
+<tbody>
+<tr><td><code>core-image-minimal</code></td><td>Kernel, glibc, BusyBox, RDK's systemd 230. Boots to a shell in about 2 s</td><td>2379</td><td>57 MB</td></tr>
+<tr><td><code>tvemu-wayland-image</code></td><td>Mesa and Weston 10, as a stand-in compositor to prove the display</td><td></td><td>248 MB</td></tr>
+<tr><td><code>tvemu-westeros-image</code></td><td>Westeros 2.1.4 with its DRM backend, RDK's compositor</td><td></td><td>226 MB</td></tr>
+<tr><td><code>tvemu-thunder-image</code></td><td>Thunder 4.4.8 and the core services (rbus, IARM bus, telemetry)</td><td>3186</td><td>147 MB</td></tr>
+<tr><td><code>tvemu-middleware-image</code></td><td>RDK-E's whole middleware package group on this layer's vendor components</td><td>8145</td><td>639 MB</td></tr>
+<tr><td><code>tvemu-browser-image</code></td><td>WPE WebKit 2.46.2, the browser plug-in, the reference user interface, AAMP, a test page and a reference stream</td><td></td><td>about 975 MB</td></tr>
+</tbody>
+</table>
+<p>The table is the ARM64 machine's, whose kernel is 21 MB. Task counts are those noted when each image was first built; an empty cell means none was noted. For the x86-64 machine only the browser image was built: 9004 tasks, a kernel of 10 MB and a root file system of 948 MB. The smaller images were not built for it one by one.</p>
+
+<div class="pics">
+  <div><img src="westeros.jpg" alt=""><p class="cap">Westeros composing its own test client, the first proof of RDK's compositor on virtio-gpu (2026-11-20).</p></div>
+  <div><img src="page.jpg" alt=""><p class="cap">The image's test page in RDK's browser plug-in <code>HtmlApp</code>, which the check <code>rdke-browser</code> uses (2026-11-21).</p></div>
+</div>
+</section>
+
+<section>
+<h2>How the Yocto build is made</h2>
+<p>Yocto's build tool (bitbake) runs on Linux only, and RDK-E's release wants Ubuntu 22.04, so on both hosts the build runs in the same container. One script does everything:</p>
+<pre>rdke/build.sh --middleware 64 tvemu-browser-image     # the full image, for the host's CPU
+rdke/build.sh --arch x86_64 --middleware 64 tvemu-browser-image   # or arm64: name the machine
+rdke/build.sh                                         # the minimal image
+./emu run --mode vm --rootfs rdke --window            # start what was built</pre>
+<p>Without <code>--arch</code> the machine is the one whose programs the host's CPU runs: <code>tvemu-arm64-rdke</code> on the Mac, <code>tvemu-x86-64-rdke</code> on an x86-64 host. The launcher likewise takes the image of the guest's CPU architecture, and names the other one when only that is built.</p>
+
+<div class="dia">
+  <div class="t">From the script to a running image</div>
+  <div class="row">
+    <div class="box h"><b>rdke/lib.sh</b><small>fetches RDK-E's layers at the versions RDK's manifests name; builds the container image</small></div>
+    <div class="rarr">&rarr;</div>
+    <div class="box h"><b>Ubuntu 22.04 container</b><small>bitbake; work kept in the engine's volume <code>tvemu-rdke-build</code></small></div>
+    <div class="rarr">&rarr;</div>
+    <div class="box h"><b>build/rdke/arm64</b> or <b>x86_64</b><small><code>Image</code> or <code>bzImage</code> (kernel) and <code>rootfs.ext4</code></small></div>
+    <div class="rarr">&rarr;</div>
+    <div class="box g"><b>./emu run --rootfs rdke</b><small>a VM of that architecture; changes to the root file system are discarded at the end</small></div>
+  </div>
+</div>
+
+<div class="dia">
+  <div class="t">The layers in the build</div>
+  <div class="row">
+    <div class="col">
+      <div class="box w"><b>meta-tvemu-rdke</b> (this repository)<small>machine, kernel options, vendor components, images, the browser and user interface recipes, all changes to RDK's recipes</small></div>
+      <div class="arr">in the place of the Pi's product, vendor and board support layers</div>
+      <div class="box"><b>RDK-E middleware layers</b> (with <code>--middleware</code>)<small>meta-rdk, meta-rdk-video, meta-middleware-generic-support, meta-rdk-oss-ext-middleware, meta-rdk-bluetooth, meta-python2, meta-oss-common-config</small></div>
+      <div class="arr">&nbsp;</div>
+      <div class="box"><b>RDK-E common layers</b><small>RDK's fork of poky (rdk-4.7.0), meta-openembedded, meta-stack-layering-support, meta-rdk-auxiliary, rdke-common-config, rdke-stb-config, meta-rdk-oss-reference, meta-rdk-halif-headers, meta-image-support-rdke</small></div>
+    </div>
+  </div>
+</div>
+
+<h3>What is particular about this build</h3>
+<ul>
+  <li><b>One build where RDK makes three.</b> RDK builds vendor, middleware and application layers apart and joins them as packages. Here everything is in one build, because RDK's packages are 32-bit. That showed things the layered build hides: the Bluetooth stack patched and installed by two layers, three files provided by two packages each, a library that does not name the platform part it links against.</li>
+  <li><b>Two build directories for each machine.</b> With <code>--middleware</code> the distro is RDK's own, so the build has its own directory and compiles the base system once more. The x86-64 machine has directories of its own beside the ARM64 one's.</li>
+  <li><b>The application layer is redone in this layer.</b> RDK's two recipes for the user interface are rewritten here so that one build gives the image.</li>
+  <li><b>The reference stream is made, not stored.</b> The build makes the H.264/AAC test stream with the same script as the emulator's Debian target.</li>
+  <li><b>A running VM keeps its image.</b> The script writes each new image as a new file and renames it, because writing over the file a running VM had open stopped that VM.</li>
+</ul>
+
+<h3>What the build environment needed</h3>
+<table>
+<thead><tr><th style="width:30%">Change</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Yocto's fake-root tool (pseudo) replaced, 1.9.0 to 1.9.3</td><td>With RDK's version the first packaging step failed every time in this container ("got *at() syscall for unknown directory")</td></tr>
+<tr><td>Yocto's own QEMU left out of the image build</td><td>Every image for a QEMU machine builds QEMU for the build host; the emulator has its own</td></tr>
+<tr><td>LLVM: three compile jobs, one link at a time</td><td>The linker was ended for want of memory in an engine with 8 GB</td></tr>
+<tr><td>WebKit: two compilers at a time, no link-time optimisation, 8 GB of swap added to the engine's VM</td><td>One source file took 5.4 GB to compile</td></tr>
+<tr><td>Engine disk enlarged from 60 GB to 200 GB</td><td>The build volume held 38 GB after the Wayland image alone, 21 GB of it downloads. <code>setup.sh</code> still creates 60 GB</td></tr>
+<tr><td><code>git://github.com</code> rewritten to <code>https://</code></td><td>Some RDK recipes name the git protocol, which GitHub no longer serves</td></tr>
+<tr><td><code>python</code> made to mean Python 3</td><td>A script of RDK's voice SDK is started as "python"</td></tr>
+<tr><td>Recipe work removed after each recipe (<code>rm_work</code>)</td><td>To keep the volume small. It also means sources for debugging have to be taken from the download mirror</td></tr>
+</tbody>
+</table>
+<p>The first build of the full image takes hours; a change to one recipe took 8 to 25 minutes to rebuild and repackage on the Mac (6 CPUs and 8 GB for the engine). On the Linux host (Intel Core i7-10700K, 16 CPU threads, 8 bitbake threads) the x86-64 browser image built in 113 minutes up to WebKit and 68 more for WebKit. The changes in this table were made on the Mac; which of them the Linux host needed was not noted.</p>
+<p class="note"><b>Not pinned:</b> <code>lib.sh</code> fetches <code>meta-vendor-raspberrypi-dev</code> from its <code>develop</code> branch (for its configuration template only), and the middleware revisions are those of RDK's manifest on 2026-11-20. A later build may differ unless these are fixed to revisions.</p>
+</section>
+
+<section>
+<h2>The vendor layer for a virtual device</h2>
+<p>RDK-E's middleware expects a vendor layer to provide ten things. A dry run of the build showed exactly that: every middleware recipe is public and parses, and 81 packages fall away for want of those ten providers and GStreamer. The Pi's implementations are written for Linux' own interfaces (DRM, ALSA, the kernel's CEC framework, sysfs) and not for Broadcom's, so this layer builds the same sources at the same releases and replaces only what is the Pi's.</p>
+<p>What stands in for hardware that a VM does not have is a file of the "virtual device": <code>/etc/tvemu</code> for fixed things and <code>/run/tvemu</code> for things that change. The files can be read and written while the target runs.</p>
+
+<table>
+<thead><tr><th style="width:23%">Component</th><th>In the VM</th><th style="width:30%">Seen working</th></tr></thead>
+<tbody>
+<tr><td>Device settings</td><td>The display is virtio-gpu's connector (<code>card0</code>, "Virtual-1"). The front panel's LED, temperature and serial number are files</td><td>Connected display with its EDID; the LED went to 255 when the power state was set to ON</td></tr>
+<tr><td>Display information</td><td><code>card0</code></td><td>Connected, 1920x1080</td></tr>
+<tr><td>Manufacturer data</td><td>Serial number and revision from a file in the form of the Pi's <code>/proc/cpuinfo</code></td><td>Serial number and hardware id in the answers of DeviceInfo and System</td></tr>
+<tr><td>Power manager</td><td>The Pi shows its power state in the CPU's frequency governor; here it is a file. So is the temperature</td><td>STANDBY to ON changed the file; writing a temperature changed the thermal state the plug-in reports</td></tr>
+<tr><td>Westeros' device backend</td><td>The Pi's recipe without its limit to the Pi's GPU; told that there are no planes</td><td>Drives the display at 1920x1080</td></tr>
+<tr><td>Westeros' video sink</td><td>The variant that takes decoded frames, since nothing decodes in hardware</td><td>AAMP plays through it</td></tr>
+<tr><td>System integration (<code>sysint-soc</code>)</td><td>Device properties (make tv-emu, model TVEMU), the unit the plug-ins wait for, the key map, the environment of Thunder's process</td><td>The window manager starts and opens the display</td></tr>
+<tr><td>Deep sleep, HDMI-CEC, system audio, GStreamer utilities, Miracast</td><td>Unchanged from the Pi's</td><td>Built; not tried. CEC needs <code>/dev/cec0</code>, which the VM's kernel does not have</td></tr>
+<tr><td>Audio service, protected-content elements, security API adapter</td><td>Empty, as on the Pi</td><td></td></tr>
+</tbody>
+</table>
+
+<h3>Start-up repairs that belong to a vendor's image</h3>
+<p>These faults at start-up came from steps that a vendor layer does for its images and this layer did not, from hardware the VM lacks, or from what a virtual device cannot have. The first four were found and repaired on 2026-11-23, the others on 2026-11-24, when the image was first reached over SSH from the host.</p>
+<table>
+<thead><tr><th style="width:22%">Symptom</th><th>Cause</th><th style="width:30%">Repair</th></tr></thead>
+<tbody>
+<tr><td>Dobby (the container daemon) ended with a segmentation fault</td><td>Dobby reads <code>/etc/dobby.json</code>. The middleware installs its settings as <code>dobby.generic.json</code> and leaves the naming to the image. Without the file Dobby prints defaults through a null pointer</td><td>The image names the file, as RDK-E's own test image does</td></tr>
+<tr><td>"Failed to start SSH Per-Connection Server", every five seconds</td><td>RDK's start script ends unless a file names the directory of the host key, which a vendor's image writes</td><td>The image has the Pi's two image steps for it</td></tr>
+<tr><td>The Bluetooth manager restarted for as long as the VM ran</td><td>The VM has no Bluetooth controller and its kernel no Bluetooth</td><td>The unit is disabled in the image; the package stays because others link against its library</td></tr>
+<tr><td>The XCast plug-in's process ended with a segmentation fault</td><td>A 64-bit fault in the DIAL server's library (see the next section)</td><td>A patch</td></tr>
+<tr><td>The journal held less than a minute</td><td>RDK-E keeps 3 MB of it in memory, which the middleware fills at once. What a unit did at start-up was gone before anyone could ask, and an earlier "no unit is restarting" was said of what was left</td><td>The image keeps 64 MB</td></tr>
+<tr><td>The cloud client (parodus) aborted at every start and was started again every 40 s</td><td>It gets its server's address from a device's configuration, and a virtual device has none ("Bad webpa url"). Seen as soon as the journal held a start</td><td>Its units are not enabled in the image</td></tr>
+<tr><td>The SSH server failed its first start in at least four boots of eight</td><td>Two units listened on port 22: RDK's always-running server and openembedded-core's per-connection socket. "Address already in use" at start-up; by hand the hand-over went well 20 times of 20, and why it did not at start-up was not found</td><td>The socket unit is not enabled. Clean in eight boots of eight after it</td></tr>
+<tr><td>The current resolution was given as 720p, and no resolution as supported</td><td>Three causes behind each other: Westeros' backend starts its control socket only when it uses planes; the display has no description (EDID), since the launcher leaves QEMU's out; and the Pi's hardware layer gives its table of resolutions a count of 0</td><td>Two patches to the hardware layer, one to Westeros' backend, and a description of its own for the virtual device. Now 1080p60, with both lists filled</td></tr>
+</tbody>
+</table>
+</section>
+
+<section>
+<h2>Patches and other changes, and why</h2>
+<p>The layer has 17 source patches. They fall into three groups, shown in the last column: <b>VM</b> (the virtual device differs from the Pi), <b>64-bit</b> (RDK's code assumes 32-bit ARM), and <b>fault</b> (a fault in RDK's code that would show on any device under the right conditions). Eleven are marked as fit to offer upstream; none has been offered.</p>
+<table>
+<thead><tr><th style="width:21%">Component</th><th style="width:28%">Patch</th><th>Why</th><th style="width:8%">Kind</th></tr></thead>
+<tbody>
+<tr><td>westeros-gl (device backend)</td><td>Frame buffer depth as a build setting, 24 here</td><td>virtio-gpu's one plane takes opaque buffers only; setting the mode failed with a frame buffer that has an alpha channel</td><td>VM</td></tr>
+<tr><td>westeros-gl</td><td>No flip when no new buffer was swapped</td><td>At a window manager pace above 60 the refresh thread used a buffer it did not get, and Thunder ended on signal 11</td><td>fault</td></tr>
+<tr><td>westeros-gl</td><td>Refresh lock: one round for each picture, rounds timed by the clock</td><td>Each picture took two rounds of the refresh thread, and without vertical blank events a round was not a refresh interval long. This held the display at about 35 pictures a second</td><td>fault</td></tr>
+<tr><td>Westeros (compositor)</td><td>Finish the drawing of a surface before its buffer goes back to the client</td><td>Mesa's software renderer draws only at the swap, when the client is already drawing into the buffer again: one picture in twenty lacked a part</td><td>VM</td></tr>
+<tr><td>Westeros' video sink</td><td>Buffers of 32 bits per pixel</td><td>virtio-gpu makes no buffers of one byte per pixel; the request failed and the sink wrote to an unmapped address</td><td>VM</td></tr>
+<tr><td>Device settings (hardware layer)</td><td>Virtual display and device files; handles widened at 136 functions</td><td>The display's names differ from the Pi's. And RDK's plug-in keeps handles in 32 bits, which loses half of a 64-bit address: no display was reported</td><td>VM, 64-bit</td></tr>
+<tr><td>Manufacturer data</td><td>Identity and temperature from files</td><td>The VM has no serial number in a device tree and no thermal zone</td><td>VM</td></tr>
+<tr><td>Power manager (hardware layer)</td><td>Governor and temperature from files</td><td>Without the CPU governor's file the component does not start</td><td>VM</td></tr>
+<tr><td>OpenCDM plug-in</td><td>Clean up once when the plug-in cannot start</td><td>A second clean-up used a null pointer and ended the whole of Thunder</td><td>fault</td></tr>
+<tr><td>TR-069 host interface</td><td>A length is a <code>size_t</code></td><td>Eight bytes would be written into four</td><td>64-bit</td></tr>
+<tr><td>HDMI-CEC library</td><td>The reader waits when the driver is not open</td><td>Without a CEC adapter the reader thread kept one CPU busy</td><td>fault</td></tr>
+<tr><td>Player interface (for AAMP)</td><td>A build without a device backend</td><td>RDK-E's way needs a library (FireboltAamp) that the public layers do not have</td><td>VM</td></tr>
+<tr><td>DIAL server (xdialserver)</td><td><code>basename()</code> declared before it is called</td><td>Undeclared, its result is taken as an int and the pointer loses its upper half; the first log message ended XCast's process</td><td>64-bit</td></tr>
+<tr><td>Westeros (renderer)</td><td>Video planes copied into textures where the renderer is virgl</td><td>The sink writes each frame through the CPU's memory into two buffers of the DRM device. With the host's GPU an image of such a buffer is the host's texture, which never gets what the guest wrote: the video was black</td><td>VM</td></tr>
+<tr><td>westeros-gl</td><td>Display server started without planes too</td><td>The control socket that the hardware layer asks for the mode was started only in the code that looks for planes, which this image turns off</td><td>fault</td></tr>
+<tr><td>Device settings (hardware layer)</td><td>Display description from the virtual device's file</td><td>Read where the connector gives none; the television's supported resolutions come from it</td><td>VM</td></tr>
+<tr><td>Device settings (hardware layer)</td><td>The port type's count of supported resolutions</td><td>The table is named with a count of 0, and RDK's device settings plug-in takes the list from that table alone</td><td>fault</td></tr>
+</tbody>
+</table>
+
+<h3>Changes that are settings, not patches</h3>
+<table>
+<thead><tr><th style="width:32%">Change</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Format warnings are not errors, for all service plug-ins and five other components</td><td>By far the most common 64-bit issue: sizes and 64-bit numbers printed with formats that fit on 32-bit only, in recipes that make the warning an error. Nothing computed with is changed</td></tr>
+<tr><td>WebKit built without branch protection</td><td>openembedded-core marks 64-bit ARM code as safe for branch target identification (BTI). WebKit's JavaScript interpreter is assembly without the landing instructions. An Apple CPU enforces BTI and the kernel ended the web process at the first script. A Pi 4's CPU has no BTI. An ARM64 matter only</td></tr>
+<tr><td>Mesa's library names given to RDK's libepoxy</td><td>RDK patches libepoxy to take the names from a vendor layer; without them the web process ended at its first drawing call</td></tr>
+<tr><td>Video decoders added to RDK's FFmpeg (H.264, HEVC, MPEG-2, VP8, VP9)</td><td>RDK builds FFmpeg with audio decoders only, since a device decodes video in hardware</td></tr>
+<tr><td>AAMP and the player interface named for the build again</td><td>RDK-E's configuration for packaged applications takes them out of the middleware</td></tr>
+<tr><td>The browser, its plug-in and backend named in the image</td><td>RDK-E's configuration takes them out as well (<code>enable_bolt_apps</code>)</td></tr>
+<tr><td>App managers compiled as position-independent code</td><td>Otherwise they do not link into a shared library in a 64-bit build</td></tr>
+<tr><td>Two GStreamer patches of RDK's left out; a cloud agent's 64-bit package taken</td><td>Both were inputs for 32-bit ARM only. The agent (xmidt) is published as packages, and each machine takes the one for its CPU</td></tr>
+<tr><td>The 64-bit settings follow the userland, not the CPU</td><td>They were written for <code>aarch64</code> and so did not hold for x86-64. They are now under one override, <code>tvemu64</code>, which the 64-bit userland sets for both machines</td></tr>
+<tr><td>x86-64: WebAssembly turned on in WebKit</td><td>WebKit's optimizing compiler (B3) is on for x86-64 and does not compile without it; RDK's recipe turns it on for ARM64 only</td></tr>
+<tr><td>x86-64: Ne10 taken out of the middleware's package group</td><td>A library for ARM's NEON instructions, whose recipe is for ARM only</td></tr>
+<tr><td>x86-64: openembedded-core's sound feature taken out of the kernel</td><td>It made ALSA a set of modules after this layer's options, which left the target without a sound card</td></tr>
+<tr><td>Two pointer-size warnings let through (rtRemote, device settings manager)</td><td>A pointer cast to a 32-bit number, and a callback whose handle is an <code>int</code></td></tr>
+<tr><td>ALSA's default device names the VM's sound card</td><td>The Pi's configuration names the Pi's HDMI sound card</td></tr>
+<tr><td>Key map: EXIT and the four colour keys added</td><td>The Pi's map lacks their codes; EXIT arrived as "volume down"</td></tr>
+<tr><td>Thunder listens on every address of the target</td><td>So that a forwarded port reaches its JSON-RPC interface, as RDK-E's own test image has it. The VM's network is QEMU's user-mode one: nothing reaches the target unless a run forwards a port</td></tr>
+<tr><td>Journal of 64 MB; the cloud client and the second SSH listener not started</td><td>See "Start-up repairs" in the previous section</td></tr>
+<tr><td>The user interface's second call of <code>setPowerState</code> taken out of its script</td><td>The image starts at STANDBY by the middleware's design, and the user interface sets ON. When <code>org.rdk.System</code> is activated, about 50 ms later, its script sets the state it last read once more. In 14 of 120 boots on the Mac that reading was still STANDBY and the device stayed in standby; in the others the call set ON again or was refused. With the call taken out, 120 of 120 boots came up ON (2026-11-27). A change to RDK's released user interface, not reported to RDK; the x86-64 image does not have it until it is built again</td></tr>
+<tr><td>Environment of Thunder's process (next section)</td><td>Display device, no planes, the window manager's pace, no external images, no Dolby in AAMP</td></tr>
+</tbody>
+</table>
+
+<h3>Additions of this layer</h3>
+<ul>
+  <li><b><code>tvemu-rdkshell</code></b>: a stand-in Thunder plug-in under the call sign <code>org.rdk.RDKShell</code>. The user interface in the image (5.0.24) starts every application with RDKShell, which this middleware no longer has. The stand-in answers its calls with RDK's window manager and the applications' own plug-ins. It keeps its lines in a file as well as in the journal: the image keeps 3 MB of journal, which the services fill in a minute or two, and on the Linux host the checks lost the line they waited for.</li>
+  <li><b><code>tvemu-app-start</code></b>: shows a page in one of the browser plug-ins, in place of RDKShell's "launch".</li>
+  <li><b><code>tvemu-remote</code></b>: turns the launcher's key lines into kernel key events.</li>
+  <li><b><code>tvemu-first-run.js</code></b>: marks the user interface's first-run steps as done, since the emulator discards what a target wrote and every start was a first run with a 30 s countdown.</li>
+  <li><b><code>tvemu-device</code></b>, <b><code>tvemu-media</code></b>, <b><code>tvemu-browser-page</code></b>: the virtual device's files, the reference stream with its pages, and the test page. The device's files now include a display description (a television named "tv-emu TV", 1920x1080 at 60, made by a script at build time). The media include the reference stream as an HLS stream and a page that plays it with AAMP, served by the image's own web server, since the browser gives AAMP's object only to pages with a host in their address.</li>
+</ul>
+</section>
+
+<section>
+<h2>Graphics, video, sound and keys</h2>
+<p>With emulated graphics, which is what a run gets unasked except on a Mac with the experimental QEMU, everything is drawn and decoded by the VM's CPU; the host's GPU as the one that draws has its own part below. The VM has one display device, virtio-gpu, which the guest sees as a plain DRM/KMS device with a single plane. That one fact shapes the whole chain: there is no video plane behind the graphics as on a set-top box, so Westeros composes video and graphics together with OpenGL ES.</p>
+
+<div class="dia">
+  <div class="t">The way of a picture</div>
+  <div class="row">
+    <div class="col frame">
+      <div class="t">In the VM (guest)</div>
+      <div class="row">
+        <div class="box g"><b>User interface or application</b><small>a web page in WPE WebKit, drawn with OpenGL ES</small></div>
+        <div class="box g"><b>Video</b><small>FFmpeg decodes; AAMP hands frames to <code>westerosrawsink</code></small></div>
+      </div>
+      <div class="arr">&darr; Wayland surfaces &darr;</div>
+      <div class="box g"><b>RDK's window manager, in Thunder's process</b><small>a Westeros compositor: one display per application, focus, keys</small></div>
+      <div class="arr">&darr;</div>
+      <div class="box g"><b>Westeros' device backend (westeros-gl)</b><small>a refresh thread shows one picture per display refresh; the swap waits for it</small></div>
+      <div class="arr">&darr;</div>
+      <div class="box g"><b>Mesa <code>llvmpipe</code></b><small>OpenGL ES on the CPU, four threads</small></div>
+      <div class="arr">&darr;</div>
+      <div class="box g"><b>Kernel: DRM/KMS on virtio-gpu</b><small><code>/dev/dri/card0</code>, 1920x1080 at 60, one plane</small></div>
+    </div>
+    <div class="rarr">&rarr;</div>
+    <div class="col frame" style="flex:0.75">
+      <div class="t">On the host</div>
+      <div class="box h"><b>QEMU</b><small>the virtio-gpu device; the hypervisor runs the guest's code on the host's CPU</small></div>
+      <div class="arr">&darr;</div>
+      <div class="row">
+        <div class="box h"><b>macOS, Linux</b><small>QEMU's D-Bus display over a private socket pair: each picture when the VM shows it, as pixels (with the host's GPU on Linux: as the GPU's buffer)</small></div>
+        <div class="box h"><b>Windows</b><small>QEMU's VNC server on a loopback port (not tried with this image)</small></div>
+      </div>
+      <div class="arr">&darr;</div>
+      <div class="box h"><b>The launcher's window</b><small>toolbar, full screen, on-screen remote control</small></div>
+    </div>
+  </div>
+</div>
+
+<h3>Getting to 60 pictures a second</h3>
+<p>The display first got 22.6 pictures a second, and the launcher's window 6 to 7 of those. The drawing was never the limit. Six things were, in the order they were found:</p>
+<table>
+<thead><tr><th style="width:5%"></th><th style="width:37%">What held it back</th><th>Repair</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>The launcher's window got each 8 MB picture through a Unix socket that takes 8 KB at a time on macOS</td><td>A loopback port at first, then QEMU's D-Bus display</td></tr>
+<tr><td>2</td><td>QEMU's VNC server passes on 15 to 21 pictures a second whatever the client asks</td><td>The window follows QEMU's D-Bus display instead (<code>emulator/dbusdisplay.py</code>): first on macOS, and on Linux too since the work on that host, where VNC gave 23 to 24 pictures a second of a video</td></tr>
+<tr><td>3</td><td>RDK's window manager waits a frame's time before each drawing, 25 ms by default</td><td><code>RDK_WINDOW_MANAGER_FRAMERATE=1000</code>: a wait of 1 ms, so that the swap paces it</td></tr>
+<tr><td>4</td><td>At a faster pace one picture in twenty lacked a part</td><td>Westeros finishes each surface's drawing (patch)</td></tr>
+<tr><td>5</td><td>Each picture took two rounds of Westeros' refresh thread, and a pace above 60 ended Thunder</td><td>Two patches to westeros-gl</td></tr>
+<tr><td>6</td><td>QEMU describes its monitor with a mode of 75 pictures a second</td><td>The launcher leaves the description out for this image (<code>edid=off</code>); the kernel then makes a mode at 60</td></tr>
+</tbody>
+</table>
+<p>Measured by hand on 2026-11-23 (macOS, ARM64, host-native, 4 CPUs for the VM): 59.9 pictures a second at the home screen and 59.8 to 60.0 while a 1920x1080 stream of 60 frames a second plays, the same number in the launcher's window. The VM's CPUs are 41 % idle during the stream, and QEMU takes 1.5 of the host's CPUs at the home screen and 2.6 during the stream.</p>
+<p>Measured on the Linux host the same day (x86-64, Intel Core i7-10700K, host-native, pictures reaching the window in 10 s): 59.9 a second at the home screen with 4 CPUs, but 30.0 while Big Buck Bunny plays at 1920x1080. More CPUs for the VM raise that: 36 with 6, 56.5 with 8, 59.3 with 12. The next section says why, and what the launcher now does about it.</p>
+
+<h3>With the host's GPU</h3>
+<p>With <code>--graphics host</code> the guest's Mesa uses <code>virgl</code> in place of <code>llvmpipe</code>: its OpenGL ES calls go through the virtio-gpu device to virglrenderer in QEMU, which draws with the host's GPU. The image needed one patch for it (Westeros' renderer copies video planes into textures, 2026-11-24). The rest was the way from QEMU to the launcher's window, which is different on each host, and the pace at which QEMU lets the guest draw. Both were worked out in <code>docs/frame-transfer.md</code>.</p>
+<table>
+<thead><tr><th style="width:17%"></th><th style="width:40%">Linux, x86-64 (NVIDIA driver 595, X11)</th><th>macOS, Apple Silicon</th></tr></thead>
+<tbody>
+<tr><td>Before</td><td>The window got the display over VNC: 22.5 pictures a second of a video</td><td>Only QEMU's own window showed it, without toolbar and remote control keys, at 25 pictures a second with the rebuilt image</td></tr>
+<tr><td>How the picture reaches the window now</td><td>QEMU's D-Bus display hands over the GPU's own buffer (a dma-buf), and the window draws it with OpenGL, without a copy (<code>emulator/gui/gldisplay.py</code>). Where the host's Qt or graphics driver does not take such buffers, VNC as before, with a note</td><td>macOS has no such buffers to hand over. QEMU reads each picture back from the GPU and sends its pixels over the D-Bus display, which the window draws as it does an emulated display. That is this project's patch to the experimental QEMU</td></tr>
+<tr><td>What held the rate</td><td colspan="2">The same thing on both hosts: QEMU answered the GPU's fences from a timer of 10 ms, and a picture needs several of them. The guest then hands over 30 pictures a second on Linux (QEMU 8.2.2) and 25 on the Mac, whatever the window does</td></tr>
+<tr><td>What lifts it</td><td>QEMU 11 with virglrenderer 1.1.2 or later, which answers them at once. Ubuntu 24.04 has neither. <code>./setup.sh --experimental-qemu</code> now builds QEMU 11.0.0 with virglrenderer 1.3.0 from source into <code>build/host/qemu</code>, with the ARM emulators when <code>--arm-targets</code> is given</td><td>That way needs <code>eventfd</code>, which macOS lacks. The patch makes the timer 1 ms on macOS</td></tr>
+<tr><td>What QEMU needed</td><td>One patch of 25 lines to the QEMU that the script builds (<code>docs/linux-experimental-qemu.patch</code>), for the shutdown fault below. In the launcher: the window listens before QEMU starts (QEMU 11.0.0 aborts otherwise), Vulkan is mapped only where the renderer was built for it, and the listener takes GPU buffers of more than one plane (QEMU 10.1 and later), which some drivers give a display</td><td>A patch of 262 lines, for macOS only (<code>docs/macos-experimental-qemu.patch</code>). Unpatched, the D-Bus display with OpenGL ends QEMU with a segmentation fault: OpenGL was used on another thread than the one that initialised it</td></tr>
+<tr><td>Pictures a second in the window, home screen</td><td>30.0 with QEMU 8.2.2; 60.0 with QEMU 11.0.0</td><td>60.1</td></tr>
+<tr><td>Pictures a second in the window, 1080p video</td><td>30.0 with QEMU 8.2.2; 60.0 with QEMU 11.0.0 (Big Buck Bunny, by hand); 59.8 in the check of 2026-11-26 (the reference stream)</td><td>60.0 (the reference stream in the browser). A 1080p clip of 60 frames a second, in the check <code>rdke-rate-host-60</code>: 60.0, and the player showed 59.0 frames a second and dropped 0 of 631. By hand before: 60.0, against 50.8 with emulated graphics</td></tr>
+<tr><td>The VM's CPUs</td><td>99 % idle at the home screen and 79 % during video in the check, with 8 CPUs</td><td>97 % idle at the home screen and 84 % during video, with 6 CPUs. With emulated graphics in the same check: 70 % and 50 %</td></tr>
+<tr><td>How it was verified</td><td>The check <code>rdke-rate-host</code> in the records of 2026-11-25 and 26, which says that OpenGL ES and Vulkan were mapped to the host's GPU; only the built QEMU 11 does that. The whole of <code>./emu verify</code> was run twice on 2026-11-26, once with QEMU 11 for every VM and once as the host is set up</td><td>The check <code>rdke-rate-host</code>, with the QEMU that <code>./setup.sh --experimental-qemu</code> built and installed on 2026-11-25; and since 2026-11-26 <code>rdke-rate-host-60</code> with a 1080p clip of 60 frames a second. With the host's GPU unasked, the other RDK-E checks run with it too and pass, AAMP and the browser's own player with picture and sound among them</td></tr>
+<tr><td>Set-up</td><td><code>./setup.sh --experimental-qemu</code>. Since 2026-11-25 the launcher takes that build by itself for a run with <code>--graphics host</code>, and only for such a run; <code>EMU_QEMU_DIR</code> naming it has every run use it. The build took 3 minutes and takes 675 MB on that host. Its package lists were tried in containers of four distributions; the build itself was run on that host only. Without it the host's own QEMU gives 30</td><td><code>./setup.sh --experimental-qemu</code>. Since 2026-11-25 the launcher takes that build by itself for a run with <code>--graphics host</code>, and since 2026-11-26 for an RDK-E image that does not ask for emulated graphics. Third-party software built from source, never installed unasked</td></tr>
+</tbody>
+</table>
+<p><b>What a run gets unasked.</b> On a Mac where the experimental QEMU is installed, a host-native RDK-E image is drawn by the host's GPU since 2026-11-26, and the launcher says so; <code>--graphics emulated</code> asks for the VM's CPU, and without that QEMU nothing changes. The RDK-E checks on the Mac therefore run with the host's GPU, except <code>rdke-rate</code>, which asks for emulated graphics by name. Since 2026-11-26 six of them are run a second time with the graphics the image does not get unasked on the host (the checks named <code>-other-graphics</code>): emulated on such a Mac, the host's GPU everywhere else. On Linux and everywhere else emulated graphics stays what the image gets unasked. One fault found on the way on Linux is repaired in the built QEMU: QEMU 8.2.2 and 11.0.0 as released end on a failed assertion when an RDK-E target is shut down from inside while the window takes GPU buffers. With the patch, a display without a picture is reported to the window as switched off.</p>
+<h3>Found beside it, with the Debian image</h3>
+<p>These are not results of the RDK-E image, but they say what its host's GPU path can carry.</p>
+<ul>
+  <li><b>Linux, Vulkan on the host's GPU.</b> The built QEMU 11 maps Vulkan too (Venus), on an NVIDIA GPU. Two faults came with it and both are worked around in the Debian image: a window format of 16 bits a channel, which NVIDIA's driver does not take and which ended the compositor's drawing for every program after it (a Vulkan layer now leaves those formats out), and the video player's own transfer queue, which ended the host's Vulkan device (the player is started without it). A 32-bit ARM target has no Vulkan at all since image 0.6.2: Mesa's Vulkan renderer for the CPU corrupts its memory there, with either QEMU and with emulated graphics too, so the image is built without it and the two checks say why. Mesa's drivers on the host were not tried.</li>
+  <li><b>macOS, 4K.</b> The OpenGL ES test draws 433 frames a second at 4K with the host's GPU (35 emulated) and the window gets 122 pictures a second of it. The Flutter application is held to 51 to 59 (six runs on 2026-11-26). It does draw with the GPU; the cost is in GTK 3, which the Flutter SDK's Linux embedder is built on and which uploads the whole window's picture to the GPU each frame: 143 uploads of 3840x2160 in 6 seconds, counted in the target. Why GTK does so is the author's reading and was not shown; no setting was found that turns it off, and an embedder without GTK was not tried. An earlier edition laid the copy to the compositor, which was wrong.</li>
+  <li><b>macOS, the Debian image's video with the host's GPU.</b> The new check <code>video-host-vm</code> plays every video codec through Wayland, OpenGL ES, Vulkan and Flutter with the host's GPU asked for: no frame of 125 dropped in the first three, 84 to 89 in Flutter, as with emulated graphics. Vulkan is drawn by the target's CPU there.</li>
+  <li><b>macOS, without a window and for captures.</b> The host's GPU now draws for a run without a window too, and <code>--screenshot</code> takes its pictures from QEMU's D-Bus display.</li>
+  <li><b>macOS, Vulkan.</b> Not on the host's GPU. It needs a target kernel with 16 KB pages, with which the Apple GPU appears as a Vulkan device, and a changed Mesa in the target, which was not tried.</li>
+</ul>
+
+<h3>Video</h3>
+<div class="two">
+<div>
+<p><b>Two players.</b> A page's <code>&lt;video&gt;</code> element is played by WebKit's own GStreamer player, and WebKit draws the picture into the page itself. The user interface's video cards are played by RDK's player, AAMP, through bindings in the browser; AAMP's pipeline ends in Westeros' video sink.</p>
+<p><b>Decoding</b> is by FFmpeg in software, through GStreamer's FFmpeg plug-in. These are decoders of patented formats, which is why RDK leaves them out; that is a matter for whoever distributes an image.</p>
+<p><b>The sink's frames</b> arrive at Westeros as two buffers (brightness and colour). Mesa's <code>llvmpipe</code> draws such a two-plane image black, so OpenGL ES's external images are hidden from Thunder's process and Westeros converts the colours itself.</p>
+</div>
+<div>
+<img src="video.jpg" alt="" style="width:100%; border:0.5pt solid #999">
+<p class="cap">A 1920x1080 stream of 60 frames a second playing through AAMP from the user interface, captured from the launcher's window on 2026-11-23. Picture: Big Buck Bunny, (c) Blender Foundation, CC BY 3.0.</p>
+</div>
+</div>
+
+<h3>Sound</h3>
+<p>The launcher gives the VM an emulated sound card (virtio sound). In the guest, ALSA's default device is that card behind a soft volume control, which RDK's volume setting moves. QEMU hands the sound to the emulator's host-side sound process, which plays it on the host's output device. That process keeps at most a second of sound waiting, so a host device that takes no sound cannot stop the target. <code>--mute</code> and <code>./emu audio</code> work as for the Debian target.</p>
+
+<h3>Remote control keys</h3>
+<div class="dia">
+  <div class="row">
+    <div class="box h"><b>Launcher's window</b><small>host keyboard or the on-screen remote control; lines "press CODE", "release CODE"</small></div>
+    <div class="rarr">&rarr;</div>
+    <div class="box h"><b>QEMU</b><small>a virtio serial port named <code>tvemu.remote</code>; no network used</small></div>
+    <div class="rarr">&rarr;</div>
+    <div class="box g"><b><code>tvemu-remote</code></b><small>makes a uinput keyboard in the guest</small></div>
+    <div class="rarr">&rarr;</div>
+    <div class="box g"><b>Window manager</b><small>maps codes with its key map and gives them to the focused application</small></div>
+  </div>
+</div>
+</section>
+
+<section>
+<h2>macOS and Linux hosts</h2>
+<p class="note"><b>Both columns are observed.</b> RDK-E has been built and run on two hosts, each with the machine of its own CPU, host-native: macOS on Apple Silicon with the ARM64 machine, and Linux on x86-64 (Ubuntu 24.04.5, QEMU 8.2.2 with KVM, Intel Core i7-10700K with 8 cores and 16 threads, 2026-11-23) with the x86-64 machine. The Linux column is taken from the notes written on that host; nothing was run on it for this report.</p>
+
+<table>
+<thead><tr><th style="width:17%"></th><th style="width:38%">macOS, Apple Silicon</th><th>Linux, x86-64</th></tr></thead>
+<tbody>
+<tr><td>Machine and guest</td><td><code>tvemu-arm64-rdke</code>: QEMU's <code>virt</code> board, run by the Mac's hypervisor on the Apple CPU</td><td><code>tvemu-x86-64-rdke</code>: QEMU's <code>q35</code> board, run by KVM on the host's CPU. The kernel and init are up in 2 s</td></tr>
+<tr><td>Where the Yocto build runs</td><td>In the Ubuntu 22.04 container inside the container engine's Linux VM (8 GB, 200 GB disk, swap added for WebKit)</td><td>The same scripts and the same container, on the host itself. The browser image: 9004 tasks, 113 minutes up to WebKit and 68 more for WebKit</td></tr>
+<tr><td>Userland</td><td>64-bit; the CPU cannot run 32-bit ARM code</td><td>64-bit, the only one the machine has</td></tr>
+<tr><td>Rendering</td><td>Where the patched experimental QEMU is installed: the Apple GPU, through ANGLE on Metal, unasked since 2026-11-26. Otherwise, or with <code>--graphics emulated</code>: the VM's CPU (Mesa <code>llvmpipe</code>)</td><td>The VM's CPU unless asked, by the launcher's choice. With <code>--graphics host</code>: the host's GPU, with the host's own QEMU or the QEMU 11 that the setup script builds</td></tr>
+<tr><td>Display to the window</td><td>QEMU's D-Bus display over a private socket pair, as pixels. For a display the GPU drew, QEMU reads the picture back first</td><td>The same for a display the VM's CPU drew. One the host's GPU drew comes as the GPU's buffer and is drawn without a copy; VNC where the host does not take such buffers</td></tr>
+<tr><td>Display mode</td><td>1920x1080 at 60, with QEMU's monitor description left out</td><td>The same setting. Westeros' backend gets no atomic mode setting on this machine; why was not looked for</td></tr>
+<tr><td>Pictures a second, home screen</td><td>59.9 with 4 CPUs for the VM</td><td>59.9 with 4 CPUs; 60.0 with 8</td></tr>
+<tr><td>Pictures a second, 1080p video, emulated graphics</td><td>59.8 to 60.0 with 4 CPUs (a stream of 60 frames a second), the VM's CPUs 41 % idle</td><td>30.0 with 4 CPUs, 36 with 6, 56.5 with 8, 59.3 with 12 (Big Buck Bunny, from the user interface). With the default of 8 the check <code>rdke-rate</code> got 35 until 2026-11-25, because it left the home screen visible under the video; with the home screen hidden it gets 59.5 to 60.0, the VM's CPUs 49 % idle</td></tr>
+<tr><td>CPUs the launcher gives the VM</td><td colspan="2">For an RDK-E image in a host-native VM, when <code>--cpus</code> is not given: half of the host's CPU threads, at least 4 and at most 8. That is 8 on the Linux host. The rule is new with the Linux work and was not run on the Mac</td></tr>
+<tr><td>Host GPU for the guest, in the launcher's window</td><td>60.0 pictures a second at the home screen and during video, with the patched experimental QEMU; the VM's CPUs 97 % and 84 % idle. Unasked since 2026-11-26</td><td>30.0 with QEMU 8.2.2. With the QEMU 11.0.0 that the setup script builds, which the launcher takes for <code>--graphics host</code>: 60.0 at the home screen and 59.8 during video in the check, the VM's CPUs 99 % and 79 % idle. Over VNC it was 22.5</td></tr>
+<tr><td>Sound, keys</td><td>As described in the previous section</td><td>The same mechanisms. Sound through virtio-snd reached the host once the kernel's sound drivers were built in again</td></tr>
+<tr><td>Checks</td><td>All sixteen RDK-E checks pass (2026-11-27, on the image with the power state repaired). The whole of <code>./emu verify</code>: 145 of 159 pass, 4 fail, 10 could not be run. Eight of the ten were run later and pass, so the record has 153, 4 and 2</td><td>All eight RDK-E checks of its record pass with the x86-64 image (2026-11-26). The whole of <code>./emu verify</code>: 145 of 151 pass, 4 fail, 2 could not be run</td></tr>
+</tbody>
+</table>
+
+<h3>What the x86-64 machine needed</h3>
+<table>
+<thead><tr><th style="width:30%">Found on the Linux host</th><th>Cause and repair</th></tr></thead>
+<tbody>
+<tr><td>The 64-bit fixes did not apply</td><td>They were conditions on <code>aarch64</code>. They now follow the 64-bit userland (override <code>tvemu64</code>) and hold for both machines</td></tr>
+<tr><td>Two recipes had no x86-64 form</td><td>Ne10 (ARM NEON) is taken out of the package group; the xmidt agent is taken as its x86-64 package</td></tr>
+<tr><td>WebKit did not compile</td><td>Its optimizing compiler needs WebAssembly, which RDK's recipe turns on for ARM64 only</td></tr>
+<tr><td>The target had no sound card</td><td>openembedded-core adds sound options for <code>qemux86-64</code> that make ALSA modules; that kernel feature is taken out</td></tr>
+<tr><td>Thunder ended with a segmentation fault at its first start, in every boot</td><td>Without atomic mode setting, Westeros' refresh thread took the front buffer of a window that had none. systemd started Thunder again, but the user interface was gone in about half of the boots. The repair is one of the two westeros-gl patches, found on both hosts the same day</td></tr>
+<tr><td>Video from the user interface was black, and the interface did not come back</td><td>Seen by the user with the host's GPU (<code>virgl</code>), which the launcher took on Linux at first. First avoided: the launcher gives an RDK-E image emulated graphics unless <code>--graphics host</code> is given. Then found and repaired on 2026-11-24: with <code>virgl</code> an image of a buffer that the sink wrote through the CPU's memory is the host's texture, which never gets the guest's bytes. Westeros' renderer now copies the two planes into textures there. Seen after it in two runs: the video plays with its picture and BACK shows the home screen</td></tr>
+<tr><td>1080p video at 30 pictures a second with 4 CPUs</td><td>The time is <code>llvmpipe</code>'s: about 19 ms of drawing for a picture where a refresh is 16.7 ms, so every picture takes two refreshes. Holding the VM's CPUs on separate cores did not help, and neither did Mesa built for AVX2, since <code>llvmpipe</code> makes its drawing code at run time for the CPU it finds. More CPUs do help, hence the new default</td></tr>
+<tr><td>The checks lost the line they waited for</td><td>The image keeps 3 MB of journal. The stand-in for RDKShell now writes its lines to a file as well, and the checks read both</td></tr>
+</tbody>
+</table>
+
+<h3>Where the two hosts' images differ</h3>
+<ul>
+  <li><b>The x86-64 image has part of the Mac's repairs.</b> It was built again on Linux on 2026-11-24 with those of 2026-11-23 that were in the repository: Dobby, the SSH server and the Bluetooth manager start as meant, with no failed unit after boot. It lacks the repair of the DIAL library, so the XCast process still leaves a crash dump at each boot, and all of the Mac's work of 2026-11-24. None of those names a CPU, so they are expected to hold for x86-64; that is not tried.</li>
+  <li><b>The ARM64 image is level with the layer.</b> It was built again on 2026-11-24 from the layer as changed for both machines, the renderer's patch for <code>virgl</code> included; that patch is what lets video play with the Apple GPU. The launcher's choices ran on the Mac: with half of the host's CPU threads the VM has 6 CPUs there.</li>
+  <li><b>Left as found on x86-64:</b> the kernel's virtio input driver comes out as a module (the keys arrive through the virtio serial port and do not need it), and the missing atomic mode setting.</li>
+</ul>
+
+<h3>Other hosts</h3>
+<p>Not tried: the ARM64 image on the Linux host (it would run on a simulated CPU there), the x86-64 image on Windows or on an Intel Mac, and Linux on ARM64. On Windows the launcher shows a VM's display through QEMU's VNC server on a loopback port, which limited the picture rate on both hosts here before the D-Bus display replaced it. QEMU's display that renders on the host's GPU without a window stays black on Windows, so the host's GPU there would need a way of its own.</p>
+</section>
+
+<section>
+<h2>What works</h2>
+<p>All of this was seen on macOS (ARM64), host-native, on the dates given in <code>rdke/README.md</code>. On Linux (x86-64) the image boots to the same user interface, the four checks pass, and video from the user interface plays with sound; what else was looked at there is in the previous section. The rest of this list was not gone through on Linux item by item.</p>
+<div class="two">
+<div>
+<h3>Start-up</h3>
+<ul>
+  <li>The image boots to RDK's user interface by itself. The log has the Home screen 10 s after systemd starts.</li>
+  <li>On 2026-11-24, with a journal that holds the whole start: systemd "running", no failed unit, no unit failing a start or started again, no process ended by a signal. The check <code>rdke-health</code> asks for exactly this.</li>
+  <li>Dobby, the SSH server and the DIAL server run. A log-in over a forwarded port was made from the host.</li>
+</ul>
+<h3>Middleware</h3>
+<ul>
+  <li>Thunder 4.4.8 answers on its JSON-RPC interface.</li>
+  <li>The middleware reads display, EDID, make, model, serial number, power state and temperature from this layer's components.</li>
+  <li>Setting the power state moves the virtual front-panel LED.</li>
+  <li>RDK's volume setting moves the sound card's volume.</li>
+</ul>
+<h3>Keys</h3>
+<ul>
+  <li>Thirteen keys reach a web page with the key names and codes a page expects, colour keys and EXIT included.</li>
+  <li>EXIT ends an application and returns to the Home screen.</li>
+</ul>
+</div>
+<div>
+<h3>Browser and applications</h3>
+<ul>
+  <li>WPE WebKit 2.46.2 shows pages full screen at 1920x1080 in the plug-ins <code>ResidentApp</code>, <code>HtmlApp</code> and <code>LightningApp</code>.</li>
+  <li>Two Lightning applications (GuessThatCity, FRacer) open from the Home screen, take keys and end with EXIT.</li>
+</ul>
+<h3>Video and sound</h3>
+<ul>
+  <li>The reference stream (H.264 and AAC) plays in the browser with picture and tone reaching the host.</li>
+  <li>Two cards of "Featured Video on Demand" play HLS streams with AAMP, one at 1920x1080, with sound; BACK returns.</li>
+  <li>60 pictures a second, with no picture lacking a part in the samples taken.</li>
+  <li>AAMP plays the reference stream as an HLS stream from the image itself, which a check does (<code>rdke-aamp</code>).</li>
+</ul>
+<h3>Launcher</h3>
+<ul>
+  <li><code>./emu run --mode vm --rootfs rdke</code> boots the image; the console is in the terminal and can be scripted.</li>
+  <li><code>emu doctor</code> and the settings window know the option.</li>
+  <li><code>--option forward=2222:22,9998:9998,10000:10000</code> reaches the SSH server, Thunder and the web inspector from the host's loopback address. Nothing is forwarded unless asked: the SSH server takes root without a password.</li>
+</ul>
+</div>
+</div>
+
+<h3>What is checked automatically</h3>
+<table>
+<thead><tr><th style="width:17%">Check</th><th>What it does</th><th style="width:19%">Mac, ARM64 (2026-11-27)</th><th style="width:15%">Linux, x86-64 (2026-11-26)</th></tr></thead>
+<tbody>
+<tr><td><code>rootfs-option</code></td><td>The option, its refusals, and a boot of whatever image is there to its own init</td><td class="ok">pass</td><td class="ok">pass</td></tr>
+<tr><td><code>rdke-browser</code></td><td>Shows the test page in RDK's browser, compares the picture in the launcher's window, sends thirteen keys</td><td class="ok">pass</td><td class="ok">pass</td></tr>
+<tr><td><code>rdke-launcher</code></td><td>Starts an application as the user interface does for a card, sends OK, ends it with EXIT</td><td class="ok">pass</td><td class="ok">pass</td></tr>
+<tr><td><code>rdke-video</code></td><td>Plays the reference stream; picture in the window and tone at the host's output</td><td class="ok">pass</td><td class="ok">pass</td></tr>
+<tr><td><code>rdke-aamp</code></td><td>RDK's player plays the reference stream as HLS from the image itself; picture in the window and tone at the host</td><td class="ok">pass</td><td class="ok">pass</td></tr>
+<tr><td><code>rdke-health</code></td><td>The start: system state, failed units, restarts, crashes, plug-ins; Thunder and SSH answer through forwarded ports</td><td class="ok">pass</td><td class="ok">pass</td></tr>
+<tr><td><code>rdke-device</code></td><td>What RDK's services say of the device: display, resolutions, description, serial number, power state, front panel</td><td class="ok">pass</td><td class="ok">pass</td></tr>
+<tr><td><code>rdke-rate</code></td><td>Pictures a second reaching the window with emulated graphics, at the home screen and during video; at least 50 asked of a host-native guest</td><td class="ok">pass: 60.1 and 60.1</td><td class="ok">pass: 60.0 and 59.5</td></tr>
+<tr><td><code>rdke-rate-host</code></td><td>The same with the host's GPU drawing (<code>--graphics host</code>), where the launcher's window can show that</td><td class="ok">pass: 60.0 and 60.0</td><td class="ok">pass: 60.0 and 59.8</td></tr>
+<tr><td><code>rdke-rate-host-60</code></td><td>A 1920x1080 clip of 60 frames a second in the browser with the host's GPU drawing: pictures a second in the window, and frames shown and dropped by the player's own count; 50 asked, a floor borrowed from the reference stream</td><td class="ok">pass: 60.0 and 59.0, 0 of 631 dropped</td><td>not run</td></tr>
+<tr><td><code>rdke-browser-</code>, <code>-launcher-</code>, <code>-video-</code>, <code>-aamp-</code>, <code>-health-</code> and <code>rdke-device-other-graphics</code></td><td>Six of the checks above once more, with the graphics an RDK-E image does not get unasked on the host: emulated on a Mac with the experimental QEMU, the host's GPU elsewhere. Each also asks that the graphics it named did draw</td><td class="ok">pass, all six, with emulated graphics</td><td>not run</td></tr>
+</tbody>
+</table>
+<p class="note"><b>Limits of this evidence.</b> On the Mac the images were built again as 0.6.2 and the whole of <code>./emu verify</code> was run on 2026-11-26 on the code merged with the Linux work of that day: 145 of 159 pass, 4 fail (the simulated ARM32 Vulkan and Flutter checks) and 10 could not be run: host graphics in a container, the x86-64 guest, and eight window checks for which the Mac's window system did not switch to full screen. Those eight were run again the same day after the Mac had been restarted, and all pass, so the Mac's record has 153 pass, 4 fail and 2 that could not be run; it is the record of the whole run and later runs of single checks, not of one run. A second whole run that night ended as the first, and showed why: the eight cannot be carried out while the Mac's screen is locked, and the checks now say so. The sixteen RDK-E checks were run again on 2026-11-27 on the image rebuilt with the repair of the power state, and all pass; the table has those results. <code>rdke-rate</code> with the home screen hidden passed in the whole run. Emulated graphics for this image is checked on the Mac by <code>rdke-rate</code> and the six <code>-other-graphics</code> checks; <code>rdke-rate-host</code> and <code>rdke-rate-host-60</code> have no twin with emulated graphics beyond <code>rdke-rate</code>. On the Linux host the whole was run twice on 2026-11-26, with QEMU 11 for every VM and as the host is set up, and both ended alike: 145 of 151 pass, the same four ARM32 checks fail, and 2 could not be run (no RedRat receiver; host graphics in a container with NVIDIA's driver). The checks new on the Mac, <code>rdke-rate-host-60</code>, <code>video-host-vm</code> and the six <code>-other-graphics</code> checks, were not run on Linux; the six would ask for the host's GPU there. Nothing was run on Linux for this report. A video from the user interface's own cards and the Home screen's applications are still seen by hand only.</p>
+</section>
+
+<section>
+<h2>What does not work, and what is missing</h2>
+
+<h3>Known faults, not repaired</h3>
+<table>
+<thead><tr><th style="width:30%">Fault</th><th>What is known</th></tr></thead>
+<tbody>
+<tr><td>A video with the <code>loop</code> attribute stops after about two seconds</td><td>A fault between WebKit 2.46.2 and GStreamer 1.18, not of the VM: WebKit takes GStreamer's early "segment done" for the end of the stream. The reference page restarts the stream itself instead</td></tr>
+<tr><td>Thunder ended when one display was taken away and another made at once</td><td>About three starts in ten on 2026-11-21. Not seen in twelve tries of twelve on 2026-11-24; most likely repaired by the second westeros-gl patch, which was not shown</td></tr>
+<tr><td>With the host's GPU and the host's own QEMU, Linux gives 30 pictures a second</td><td>QEMU 8.2.2 answers the GPU's fences from a 10 ms timer. The QEMU 11 that the setup script builds on request gives 60, and the launcher takes it by itself for <code>--graphics host</code>; a host without that build stays at 30</td></tr>
+<tr><td>QEMU as released ends when an RDK-E target is shut down from inside, with the host's GPU on Linux</td><td>A failed assertion in QEMU's D-Bus display (<code>dbus_scanout_texture</code>) while the window takes GPU buffers, in 8.2.2 and 11.0.0. Repaired by a patch in the QEMU 11 that the setup script builds; the host's own QEMU still has it</td></tr>
+<tr><td>The host's GPU on the Mac needs a QEMU patched by this project</td><td>The experimental QEMU is third-party and built from source, and the patch is not offered upstream. The RDK-E image at 4K cannot be measured with it: the image has no 4K output (below)</td></tr>
+<tr><td>An application started past the user interface is drawn over a visible home screen</td><td>The user interface hides itself when it starts an application. Started another way (org.rdk.RDKShell's <code>launch</code>), the home screen stays and the VM's CPU draws it under the video at every refresh: 35 pictures a second on the Linux host with 8 CPUs, 60 once it is hidden. The check now hides it; such an application has to do the same, or needs more CPUs or the host's GPU. With 4 CPUs that host gives 30 in any case</td></tr>
+<tr><td>XCast still faults in the x86-64 image</td><td>That image was built before the repair of the DIAL library was in the repository</td></tr>
+<tr><td>The browser of the user interface is over its memory limit</td><td>Thunder logs "Critical memory usage" (about 260 MB of 250 MB). Nothing was seen to follow</td></tr>
+<tr><td>The device starts at 75 % volume</td><td>The Pi's hardware layer chooses it when it has no volume in store, and RDK's service reports the same. Not a fault of the VM; left as it is</td></tr>
+<tr><td>The EXIT key is sometimes not taken</td><td>About one run in five before the check learned to press it again; presumed to be while the interface changes screens, not confirmed</td></tr>
+<tr><td>With <code>--resolution 4k</code> the image shows a quarter of the picture</td><td>The output stays at 1920x1080 while each application is given a display of 3840x2160, so the top left quarter of the page is shown (Mac, 2026-11-26). Two things hold the output there: a Westeros setting taken from the Pi (<code>WESTEROS_GL_GRAPHICS_MAX_SIZE</code>), and RDK's window manager, which forces 1920x1080 also with that setting lifted. Where the window manager takes the size from was not read. The launcher does not refuse the option for this image</td></tr>
+<tr><td>The compositor of the simulated ARM32 Debian target ends now and then during video</td><td>A segmentation fault in Weston 14.0.2, with either QEMU and either graphics (Linux, 2026-11-26). Not the RDK-E image; the workload starts the compositor again. Where in Weston was not found</td></tr>
+<tr><td>RDK's <code>syslog-ng</code> fails in the minimal image</td><td>Seen on 2026-11-20; not looked into</td></tr>
+</tbody>
+</table>
+
+<h3>Missing: the application layer as RDK-E means it</h3>
+<p>RDK-E has moved the browser and the user interface out of the middleware. They are meant to come as signed application packages ("bolt") that the app managers install and run in containers through Dobby. The image has the older arrangement instead: the browser and the 5.0.24 user interface directly in the image, on a stand-in for RDKShell.</p>
+<p>The new managers are all in the image and activated (<code>AppManager</code>, <code>LifecycleManager</code>, <code>RuntimeManager</code>, <code>AppPackageManager</code>, <code>AppStorageManager</code>, <code>DownloadManager</code>, <code>PreinstallManager</code>, <code>RDKWindowManager</code>, <code>OCIContainer</code>). RDK-E's own start of the user interface, <code>sceneset.service</code>, already runs at every boot and fails for want of packages. Missing are:</p>
+<ul>
+  <li><b>Three packages</b> built for 64-bit ARM: a base layer, the browser as a runtime, and the user interface in a release from 6.0 on. RDK publishes a set for the Pi 4, which is most likely 32-bit; none was downloaded and no 64-bit set was found.</li>
+  <li><b>The signing certificate</b> for them in <code>/etc/rdk/certs</code>.</li>
+  <li><b>A "GPU layer"</b> for the platform, which the Pi's vendor layer has as a recipe and this layer has not.</li>
+  <li><b>The kernel's overlay file system</b>, which is off in this kernel.</li>
+</ul>
+<p>No package was installed or started, and no container has ever been run in the image.</p>
+
+<h3>Missing: hardware a VM does not have</h3>
+<ul>
+  <li><b>HDMI-CEC:</b> no adapter. The kernel has a virtual CEC driver that is not used.</li>
+  <li><b>Bluetooth and Wi-Fi:</b> none; the Bluetooth manager is not started.</li>
+  <li><b>A video plane and hardware decoding:</b> none. Video is composed with the graphics.</li>
+  <li><b>Protected content:</b> no DRM system, no secure video path, no Dolby decoder.</li>
+  <li><b>Power states and resolution</b> are not tied to the launcher.</li>
+</ul>
+
+<h3>Missing: in the launcher and the checks</h3>
+<ul>
+  <li>The launcher boots an RDK-E image but does not build one, and <code>setup.sh</code> does not prepare a host for the build.</li>
+  <li>Captures (<code>--screenshot</code>), recording and RedRat input are refused for this image.</li>
+  <li>Ports are forwarded only on request and by number; no option names "SSH" or "Thunder", and the settings window does not offer it.</li>
+  <li>No check plays a video from the user interface's own cards, sets a resolution or a power state, or covers Westeros alone.</li>
+  <li>Applications the user interface offers but cannot start: YouTube, Netflix, Amazon (their plug-ins are not there).</li>
+</ul>
+
+<h3>Not tried</h3>
+<p>DASH, adaptive streams and Media Source Extensions in the browser's own player; other codecs; subtitles, seeking and trick play in AAMP; resolutions other than 1080p; a simulated CPU; the 32-bit userland; Windows, an Intel Mac and Linux on ARM64 as hosts; a stream of 60 frames a second on the Linux host (checked on the Mac); DIAL requests; use of the web inspector; calls to the Bluetooth plug-in; deep sleep and Miracast.</p>
+</section>
+
+<section>
+<h2 style="break-before: page">Future directions</h2>
+<p>These are proposals, in the order I would take them. None is an agreed requirement.</p>
+
+<h3>1. Decide what RDK-E is to the project</h3>
+<p>Today RDK-E is a trial beside the requirements: one launcher option is specified, the rest is a README. If it is to be kept working, it needs requirements of its own in <code>openspec/specs/</code> (what an RDK-E target must do, on which hosts) and checks that hold them. Everything below depends on that decision, since it sets which hosts matter.</p>
+
+<h3>2. Move to RDK-E's app managers</h3>
+<p>This is the largest gap between the image and a current RDK-E device, and it removes two stand-ins (the RDKShell plug-in and the old user interface).</p>
+<ol>
+  <li>Turn on the overlay file system in the kernel and add a GPU layer for the VM's software rendering.</li>
+  <li>Prove install and launch with a small self-made test package before the long build. This exercises the kernel, the certificate, the GPU layer and Dobby.</li>
+  <li>Build the base and browser packages for 64-bit ARM with RDK's package build (<code>meta-bolt-distro</code>, <code>meta-bolt-wpe</code>, <code>bolt-tools</code>). This is a second large Yocto build that includes WebKit again. RDK's own remark is that 64-bit is "not fully supported".</li>
+  <li>Package the 6.x user interface, sign all three with a certificate of our own, and list them in a factory-apps manifest for the image.</li>
+  <li>Remove the RDKShell stand-in and the 5.0.24 interface once the new one starts.</li>
+</ol>
+<p>The biggest unknown is whether an application in a container can draw through Westeros with software rendering. Nothing tests that yet.</p>
+
+<h3>3. Hosts</h3>
+<ul>
+  <li><b>The two images are level</b> as far as the checks say: the eight that both hosts have run pass on both. Open on Linux: the two newer checks of the Mac.</li>
+  <li><b>Windows and Intel Macs:</b> the x86-64 machine is the image for them. What is open is the hypervisor of each host and, on Windows, a display path that is not VNC.</li>
+  <li><b>Linux on ARM64:</b> the ARM64 image should run host-native under KVM, and the D-Bus display is already taken on Linux.</li>
+  <li><b>A simulated CPU:</b> one run of either image on the other kind of host would say whether that mode is usable at all. It is not expected to be for video.</li>
+</ul>
+
+<h3>4. Make it part of the launcher</h3>
+<ul>
+  <li><code>./emu build --rootfs rdke</code> that runs the Yocto build, and a setup option that sizes the container engine for it (disk, memory, swap).</li>
+  <li>Captures and recording for this image, and RedRat input.</li>
+  <li>An option to keep what the target wrote, which would also make the first-run script unnecessary.</li>
+  <li>Power states and <code>--resolution</code> tied to the virtual device's files and the display mode.</li>
+</ul>
+
+<h3>5. Checks</h3>
+<p>The four checks proposed in the first edition are there since 2026-11-24 (start-up health, device interfaces, AAMP with a stream in the image, pictures a second). What remains:</p>
+<ul>
+  <li>The x86-64 image built again with the repair of the power state, and <code>rdke-device</code> run on Linux with it.</li>
+  <li>A right picture with <code>--resolution 4k</code>: either the applications' displays take the output's size, or the window manager is brought to 3840x2160, which a measurement at 4K needs.</li>
+  <li>The six <code>-other-graphics</code> checks on Linux, where they ask for the host's GPU.</li>
+  <li>A number of its own for the 60-frame clip, and that check on Linux.</li>
+  <li>A video started from the user interface with the remote control, as a person does it.</li>
+  <li>Setting a resolution and a power state, and seeing the display follow.</li>
+</ul>
+
+<h3>6. A more complete virtual device</h3>
+<ul>
+  <li>A simulated HDMI link with the kernel's virtual CEC driver.</li>
+  <li>The display description given to the kernel as well, so that the modes it offers are the television's.</li>
+  <li>The browser's memory limit for the user interface, which it exceeds at the Home screen.</li>
+</ul>
+
+<h3>7. Graphics on the host's GPU</h3>
+<p>Software rendering reaches 60 pictures a second at 1080p on an Apple CPU, and on an Intel Core i7-10700K with eight VM CPUs and nothing else drawn under the video. A slower host or 4K will not get there. The host's GPU does, on both hosts, in the launcher's own window, and on the Mac it is now what the image gets unasked. What is left:</p>
+<ul>
+  <li><b>Linux: the host's GPU unasked.</b> The launcher takes the built QEMU 11 by itself for <code>--graphics host</code> since 2026-11-25. Making that what an RDK-E image gets unasked there, as on the Mac, is the step left; it is not decided.</li>
+  <li><b>macOS: offer the patch to QEMU</b>, or to the tap that carries the macOS OpenGL patches, so that the project need not carry it. A way without the read-back would hand the window an IOSurface, which is more work in QEMU.</li>
+  <li><b>Measure what is open:</b> 4K with the RDK-E image, a stream of 60 frames a second on Linux (the Mac has a check for it at 1080p), other Linux drivers (Mesa's, Wayland), and Vulkan in the RDK-E image, which nothing in it uses yet.</li>
+  <li><b>Windows</b> has no working way for a GPU-drawn display to the launcher's window yet.</li>
+</ul>
+
+<h3>8. Give back and tidy up</h3>
+<ul>
+  <li><b>Offer the eleven patches marked "Pending" to RDK:</b> the three westeros-gl faults, Westeros' finish and its copy of video planes for virgl, the sink's buffers, the OpenCDM clean-up, the TR-069 length, the CEC reader, the DIAL <code>basename()</code> and the count of supported resolutions. The handle width in the device settings interface is worth reporting as well; it is the weightiest 64-bit issue and the workaround here is specific to this hardware layer.</li>
+  <li><b>Pin every fetched layer</b> to a revision, and take over the Pi's file of vendor package versions.</li>
+  <li><b>Check the format warnings</b> that are let through: what is printed with a wrong format can be printed wrongly.</li>
+  <li><b>Settle the licence question</b> of the software video decoders before any image is distributed.</li>
+  <li><b>Look at a newer WebKit and GStreamer</b> for the looping-video fault.</li>
+</ul>
+</section>
+
+<section>
+<h2>Versions and sources</h2>
+<div class="two">
+<div>
+<table>
+<thead><tr><th>Component</th><th>Version</th></tr></thead>
+<tbody>
+<tr><td>Yocto</td><td>kirkstone; RDK's poky <code>rdk-4.7.0</code></td></tr>
+<tr><td>RDK-E manifest</td><td><code>rdke-generic-manifest</code> 1.1.1</td></tr>
+<tr><td>Kernel</td><td><code>linux-yocto</code> 5.15</td></tr>
+<tr><td>systemd</td><td>230 (RDK's)</td></tr>
+<tr><td>Mesa</td><td>22.0.3 (<code>virgl</code>, <code>swrast</code>)</td></tr>
+<tr><td>Westeros</td><td>2.1.4</td></tr>
+<tr><td>Thunder</td><td>4.4.8</td></tr>
+<tr><td>WPE WebKit</td><td>2.46.2</td></tr>
+<tr><td>GStreamer</td><td>1.18</td></tr>
+<tr><td>Dobby</td><td>3.23.0</td></tr>
+<tr><td>Reference user interface</td><td>rdke-refui 5.0.24</td></tr>
+</tbody>
+</table>
+</div>
+<div>
+<h3 style="margin-top:0">Where things are</h3>
+<ul>
+  <li><code>rdke/README.md</code>: the full findings, with dates and numbers.</li>
+  <li><code>rdke/meta-tvemu-rdke</code>: the Yocto layer. Each change has a comment at its place saying why.</li>
+  <li><code>rdke/build.sh</code>, <code>lib.sh</code>, <code>check-parse.sh</code>, <code>probe-middleware.sh</code>: the build and its probes.</li>
+  <li><code>emulator/rootfs.py</code>, <code>run.py</code>, <code>graphics.py</code>, <code>dbusdisplay.py</code>, <code>gui/gldisplay.py</code>: the launcher's side.</li>
+  <li><code>docs/frame-transfer.md</code>: how a picture gets to the window on each host, with the measurements; <code>docs/macos-experimental-qemu.patch</code>: the change to the experimental QEMU.</li>
+  <li><code>openspec/changes/staged-emulator-delivery/tasks.md</code>, task 9.4: what was done and verified, on which host.</li>
+</ul>
+<h3>Hosts of the results</h3>
+<p>macOS on Apple Silicon (ARM64), host-native VM with 4 CPUs (6 since 2026-11-24); the build in a container engine with 6 CPUs and 8 GB. For the host's GPU: QEMU 11.1.90 (commit <code>c95b8c49</code>) from the tap milesbuckton/qemu-virgl with this project's patch, virglrenderer 1.3.0, ANGLE on Metal.</p>
+<p>Linux on x86-64: Ubuntu 24.04.5, QEMU 8.2.2 with KVM, Intel Core i7-10700K (16 CPU threads), host-native VM with 4 to 12 CPUs. For the host's GPU: NVIDIA driver 595.99.02 on X11, and the QEMU 11.0.0 with virglrenderer 1.3.0 that <code>./setup.sh --experimental-qemu</code> builds, with this project's patch of 25 lines, for the 60 pictures a second.</p>
+</div>
+</div>
+
+<h3>RDK sources read</h3>
+<p>All on github.com/rdkcentral and under Apache-2.0 or MIT: <code>vendor-manifest-raspberrypi</code>, <code>meta-product-raspberrypi</code>, <code>meta-vendor-raspberrypi-dev</code>, <code>rdke-generic-manifest</code>, <code>middleware-manifest-rdke</code>, <code>build-scripts</code>, <code>meta-stack-layering-support</code>, the seven middleware layers, and the sources of Dobby, xdialserver and the app managers for the fault findings. Also <code>meta-raspberrypi</code> (kirkstone) and openembedded-core's <code>qemuarm64</code> and <code>qemux86-64</code>.</p>
+
+<h3>How this report was made</h3>
+<p>Written on 2026-11-24 from the repository's own notes and the layer's files. No build, boot or measurement was made for it, and no number was entered that is not in those notes. The second edition of the same day adds the x86-64 machine and the Linux host, from the notes and results that host committed on 2026-11-23. The third edition adds the work of 2026-11-24 on the Mac: forwarded ports, the start-up repairs and four checks, with the results of the checks run that day. The fourth edition adds the Linux host's work of the same day, from its notes: the renderer's patch for the host's GPU and the rebuilt x86-64 image. The fifth edition, of 2026-11-25, adds the host's GPU in the launcher's window: Linux from that host's notes, the Mac with the checks run that day. The sixth edition, of the same day, adds QEMU 11 from the setup script on Linux, from that host's notes and its record of checks, and the Mac's work after the fifth: the launcher's own choice of QEMU, the measurements at 4K and with 60 frames a second, and the fault in <code>rdke-device</code>. The seventh edition, of 2026-11-26, adds from the Linux host's notes and record the launcher's own choice of QEMU 11, the home screen under <code>rdke-rate</code>'s video and the ARM32 image without Vulkan, and from the Mac the host's GPU unasked, two checks and what holds Flutter at 4K, with the checks run on 2026-11-25 and 26. The eighth edition, of the same day, adds from the Mac the whole run on the merged code with the images rebuilt, the eight window checks run again, six checks for the other graphics, and how the power state gets to ON; this edition was made from a kept copy of the seventh's source after a power cut, with the pictures taken from the seventh's PDF. The ninth edition, of 2026-11-27, adds from the Mac the 120 boots that showed the power state fault, its repair and the 120 boots after it, what holds the image at 1920x1080, and that the Mac's eight window checks cannot be run while its screen is locked. The eighth edition's account of the fault had the user interface's two calls in the wrong order. The ordering of the future directions is the author's reading.</p>
+</section>
+
+</body>
+</html>

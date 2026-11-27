@@ -2169,9 +2169,9 @@
         "a stand-in (the ARM64 Debian VM image, started with --rootfs rdke as an RDK-E image would be) booted its kernel and its own init in 1s, in a host-native guest",
         "the image built for the machine tvemu-arm64-rdke (Image and rootfs.ext4 in build/rdke/arm64) booted its kernel and its own init in 2s, in a host-native guest"
       ],
-      "checked_at": "2026-11-26T16:28:27Z",
-      "seconds": 2.8,
-      "revision": "68fe7d0cf3a7f5a2b015dd5f0197d1c01b6e9178-dirty",
+      "checked_at": "2026-11-26T23:40:36Z",
+      "seconds": 2.9,
+      "revision": "ad6371c6a30bd4cb50fbf2c9d4a8a526bc833552-dirty",
       "image_definition_sha256": "6711050d0c2c415cb90435e3aed5574ee4778d4cb864eab458a2e643eed6abbc"
     },
     "rdke-browser": {
@@ -2180,12 +2180,12 @@
       "description": "RDK's browser shows a page in an RDK-E image and gets the remote control's keys",
       "details": [
         "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest, and RDK's browser plug-in HtmlApp (WPE WebKit) showed the image's page on a display of RDK's window manager: tvemu-app-start: HtmlApp shows file:///usr/share/tvemu/page/index.html on wst-htmlapp (1920x1080)",
-        "the launcher's window got the page's picture at 1920x1080: its red corner blocks and its background are where the page draws them; the plug-in reports 41 frames a second",
+        "the launcher's window got the page's picture at 1920x1080: its red corner blocks and its background are where the page draws them; the plug-in reports 51 frames a second",
         "13 remote control keys sent from the window arrived in the page, each with a web page's name and code for it: ok as Enter, up as ArrowUp, down as ArrowDown, left as ArrowLeft, right as ArrowRight, back as Backspace, 1 as 1, play as MediaPlay, red as ColorF0Red, green as ColorF1Green, yellow as ColorF2Yellow, blue as ColorF3Blue, exit as Escape"
       ],
-      "checked_at": "2026-11-26T16:29:00Z",
+      "checked_at": "2026-11-26T23:41:10Z",
       "seconds": 33.2,
-      "revision": "68fe7d0cf3a7f5a2b015dd5f0197d1c01b6e9178-dirty",
+      "revision": "ad6371c6a30bd4cb50fbf2c9d4a8a526bc833552-dirty",
       "image_definition_sha256": "6711050d0c2c415cb90435e3aed5574ee4778d4cb864eab458a2e643eed6abbc"
     },
     "rdke-launcher": {
@@ -2197,9 +2197,9 @@
         "the image's stand-in answered the call (RDK-E's middleware has org.rdk.RDKWindowManager in its place) and names the application as resumed; the OK key arrived in the application",
         "the EXIT key went to the user interface, which ended the application: it is no longer in org.rdk.RDKShell's getState, its page is off the display, and the user interface has its display"
       ],
-      "checked_at": "2026-11-26T16:29:28Z",
+      "checked_at": "2026-11-26T23:41:38Z",
       "seconds": 28.0,
-      "revision": "68fe7d0cf3a7f5a2b015dd5f0197d1c01b6e9178-dirty",
+      "revision": "ad6371c6a30bd4cb50fbf2c9d4a8a526bc833552-dirty",
       "image_definition_sha256": "6711050d0c2c415cb90435e3aed5574ee4778d4cb864eab458a2e643eed6abbc"
     },
     "rdke-video": {
@@ -2208,15 +2208,15 @@
       "description": "RDK's browser plays video with sound in an RDK-E image, and both reach the host",
       "details": [
         "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest, and RDK's browser plug-in HtmlApp (WPE WebKit) played the image's H.264 and AAC reference stream from a page: its player reports it playing at 1280x720, with its time moving",
-        "the launcher's window got the stream's picture, full screen at 1920x1080: its four corner blocks and its marker block have the stream's colours; decoding is done on the target's CPU and drawing on the host's GPU, with the browser's processes at 106% of one CPU",
-        "the stream's 880 Hz tone reached the host-side process in 110 tenths of a second; path: target sound card (0 [SoundCard      ]: virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe",
+        "the launcher's window got the stream's picture, full screen at 1920x1080: its four corner blocks and its marker block have the stream's colours; decoding is done on the target's CPU and drawing on the host's GPU, with the browser's processes at 93% of one CPU",
+        "the stream's 880 Hz tone reached the host-side process in 109 tenths of a second; path: target sound card (0 [SoundCard      ]: virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe",
         "the tone was recorded at the host's audio output",
-        "host output device: Astro A50 Voice, at volume 0; it played for 16.8 s by its own clock, 12.3 s of that the target's sound",
+        "host output device: Astro A50 Voice, at volume 0; it played for 16.9 s by its own clock, 12.2 s of that the target's sound",
         "the host's audio server reported the player process as playing on: Astro A50 Voice"
       ],
-      "checked_at": "2026-11-26T16:30:01Z",
-      "seconds": 33.4,
-      "revision": "68fe7d0cf3a7f5a2b015dd5f0197d1c01b6e9178-dirty",
+      "checked_at": "2026-11-26T23:42:11Z",
+      "seconds": 33.5,
+      "revision": "ad6371c6a30bd4cb50fbf2c9d4a8a526bc833552-dirty",
       "image_definition_sha256": "6711050d0c2c415cb90435e3aed5574ee4778d4cb864eab458a2e643eed6abbc"
     },
     "rdke-health": {
@@ -2224,13 +2224,13 @@
       "task": "9.4",
       "description": "an RDK-E image starts without a failed unit, a restart or a crash, and its forwarded ports answer",
       "details": [
-        "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest to its user interface with the system's state \"running\": no unit failed, none failed a start or was started again, and no process ended on a signal (the journal goes back to the kernel's first lines, 24.0M kept)",
+        "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest to its user interface with the system's state \"running\": no unit failed, none failed a start or was started again, and no process ended on a signal (the journal goes back to the kernel's first lines, 16.0M kept)",
         "Thunder has 75 plug-ins, and every one it starts by itself is started; not started, by the image's configuration: HtmlApp, JSPP, LightningApp, PerfMetricsWebKitBrowser, SearchAndDiscoveryApp, WebKitBrowser, org.rdk.AVOutput, org.rdk.FirmwareDownload, org.rdk.FrameRate, org.rdk.HdmiCecSink, org.rdk.MiracastService, org.rdk.PackageManager, org.rdk.ResourceManager, org.rdk.ScreenCapture, org.rdk.UserPreferences, org.rdk.VictimSelector, org.rdk.Warehouse",
         "Thunder's JSON-RPC interface and the SSH server (SSH-2.0-dropbear_2020.81) answered this host at ports of its loopback address that the launcher forwards to the target's ports 9998 and 22 (--option forward)"
       ],
-      "checked_at": "2026-11-26T16:31:15Z",
-      "seconds": 40.2,
-      "revision": "68fe7d0cf3a7f5a2b015dd5f0197d1c01b6e9178-dirty",
+      "checked_at": "2026-11-26T23:43:42Z",
+      "seconds": 55.6,
+      "revision": "ad6371c6a30bd4cb50fbf2c9d4a8a526bc833552-dirty",
       "image_definition_sha256": "6711050d0c2c415cb90435e3aed5574ee4778d4cb864eab458a2e643eed6abbc"
     },
     "rdke-device": {
@@ -2241,9 +2241,9 @@
         "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest, and RDK's services answered this host through Thunder: the display HDMI0 is connected at 1920x1080 (1080p60), which is the display's mode (1920x1080), with 18 resolutions supported (480p60, 480i60, 576i50, 576p50, 720p60, 720p50, 1080p24, 1080p25, 1080p30, 1080p50, 1080p60, 1080i60, 1080i50, 2160p24, 2160p25, 2160p30, 2160p50, 2160p60) and the television's own (480p, 480p60, 720p50, 720p, 720p60, 1080p50, 1080p60)",
         "the display's description (EDID, 256 bytes) is the virtual device's, \"tv-emu TV\"; the serial number is the virtual device's (00000000TVEMU001), the maker \"tv-emu\" and the model \"TVEMU\"; the power state is ON and the front panel has its power light"
       ],
-      "checked_at": "2026-11-26T19:24:29Z",
-      "seconds": 18.2,
-      "revision": "68fe7d0cf3a7f5a2b015dd5f0197d1c01b6e9178-dirty",
+      "checked_at": "2026-11-26T23:44:00Z",
+      "seconds": 18.0,
+      "revision": "ad6371c6a30bd4cb50fbf2c9d4a8a526bc833552-dirty",
       "image_definition_sha256": "6711050d0c2c415cb90435e3aed5574ee4778d4cb864eab458a2e643eed6abbc"
     },
     "rdke-aamp": {
@@ -2253,14 +2253,14 @@
       "details": [
         "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest, and RDK's player AAMP, in the browser plug-in HtmlApp as the image's user interface uses it, played the image's reference stream as an HLS stream (H.264 and AAC in MPEG-2 transport stream segments) from the image's own web server: its player reports it playing at 1280x720, with its time moving",
         "the launcher's window got the stream's picture, full screen at 1920x1080: its four corner blocks and its marker block have the stream's colours; decoding is done on the target's CPU and drawing on the host's GPU, with the browser's processes at 13% of one CPU",
-        "the stream's 880 Hz tone reached the host-side process in 102 tenths of a second; path: target sound card (0 [SoundCard      ]: virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe",
+        "the stream's 880 Hz tone reached the host-side process in 115 tenths of a second; path: target sound card (0 [SoundCard      ]: virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe",
         "the tone was recorded at the host's audio output",
-        "host output device: Astro A50 Voice, at volume 0; it played for 16.8 s by its own clock, 12.0 s of that the target's sound",
+        "host output device: Astro A50 Voice, at volume 0; it played for 18.1 s by its own clock, 13.2 s of that the target's sound",
         "the host's audio server reported the player process as playing on: Astro A50 Voice"
       ],
-      "checked_at": "2026-11-26T16:30:35Z",
-      "seconds": 33.3,
-      "revision": "68fe7d0cf3a7f5a2b015dd5f0197d1c01b6e9178-dirty",
+      "checked_at": "2026-11-26T23:42:46Z",
+      "seconds": 34.8,
+      "revision": "ad6371c6a30bd4cb50fbf2c9d4a8a526bc833552-dirty",
       "image_definition_sha256": "6711050d0c2c415cb90435e3aed5574ee4778d4cb864eab458a2e643eed6abbc"
     },
     "rdke-rate": {
@@ -2268,12 +2268,12 @@
       "task": "9.4",
       "description": "the launcher's window gets an RDK-E image's pictures at the pace its compositor shows them, with emulated graphics",
       "details": [
-        "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest with 6 CPUs and the display mode 1920x1080, drawn by the target's CPU, and the launcher's window got 60.0 pictures a second at the user interface's home screen and 60.1 while the browser played the reference stream (each counted over 10 s; the VM's CPUs were 68 % and 66 % idle)",
+        "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest with 6 CPUs and the display mode 1920x1080, drawn by the target's CPU, and the launcher's window got 60.1 pictures a second at the user interface's home screen and 60.1 while the browser played the reference stream (each counted over 10 s; the VM's CPUs were 70 % and 67 % idle)",
         "both are at least 50, the least asked of a host-native guest whose compositor shows 60, and the window shows the stream's picture (its corner blocks and its marker block)"
       ],
-      "checked_at": "2026-11-26T16:32:52Z",
-      "seconds": 78.9,
-      "revision": "68fe7d0cf3a7f5a2b015dd5f0197d1c01b6e9178-dirty",
+      "checked_at": "2026-11-26T23:45:18Z",
+      "seconds": 78.5,
+      "revision": "ad6371c6a30bd4cb50fbf2c9d4a8a526bc833552-dirty",
       "image_definition_sha256": "6711050d0c2c415cb90435e3aed5574ee4778d4cb864eab458a2e643eed6abbc"
     },
     "rdke-rate-host": {
@@ -2281,12 +2281,12 @@
       "task": "9.4",
       "description": "the same with the host's GPU drawing for the RDK-E image (--graphics host)",
       "details": [
-        "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest with 6 CPUs and the display mode 1920x1080, drawn by the host's GPU (virtio-gpu with virglrenderer (OpenGL ES on the host GPU)), and the launcher's window got 60.1 pictures a second at the user interface's home screen and 59.9 while the browser played the reference stream (each counted over 10 s; the VM's CPUs were 97 % and 82 % idle)",
+        "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest with 6 CPUs and the display mode 1920x1080, drawn by the host's GPU (virtio-gpu with virglrenderer (OpenGL ES on the host GPU)), and the launcher's window got 60.0 pictures a second at the user interface's home screen and 60.0 while the browser played the reference stream (each counted over 10 s; the VM's CPUs were 97 % and 83 % idle)",
         "both are at least 50, the least asked of a host-native guest whose compositor shows 60, and the window shows the stream's picture (its corner blocks and its marker block)"
       ],
-      "checked_at": "2026-11-26T16:34:11Z",
-      "seconds": 78.8,
-      "revision": "68fe7d0cf3a7f5a2b015dd5f0197d1c01b6e9178-dirty",
+      "checked_at": "2026-11-26T23:46:37Z",
+      "seconds": 78.9,
+      "revision": "ad6371c6a30bd4cb50fbf2c9d4a8a526bc833552-dirty",
       "image_definition_sha256": "6711050d0c2c415cb90435e3aed5574ee4778d4cb864eab458a2e643eed6abbc"
     },
     "rdke-rate-host-60": {
@@ -2294,12 +2294,12 @@
       "task": "9.4",
       "description": "the same for a 1920x1080 stream of 60 frames a second, with what the player says it showed",
       "details": [
-        "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest with 6 CPUs, drawn by the host's GPU (virtio-gpu with virglrenderer (OpenGL ES on the host GPU)), and its browser played a 1920x1080 H.264 clip of 60 frames a second from a file: over 11 s the launcher's window got 60.0 pictures a second, and the player says it showed 59.1 frames a second, 0 of 631 dropped, while the stream's time moved 10.5 s (the VM's CPUs were 57 % idle)",
+        "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest with 6 CPUs, drawn by the host's GPU (virtio-gpu with virglrenderer (OpenGL ES on the host GPU)), and its browser played a 1920x1080 H.264 clip of 60 frames a second from a file: over 11 s the launcher's window got 60.0 pictures a second, and the player says it showed 59.0 frames a second, 0 of 631 dropped, while the stream's time moved 10.5 s (the VM's CPUs were 58 % idle)",
         "both are at least 50, the least asked of a host-native guest whose compositor shows 60 (the same floor as for the reference stream; no number of its own is agreed for this clip)"
       ],
-      "checked_at": "2026-11-26T16:35:37Z",
-      "seconds": 85.6,
-      "revision": "68fe7d0cf3a7f5a2b015dd5f0197d1c01b6e9178-dirty",
+      "checked_at": "2026-11-26T23:48:02Z",
+      "seconds": 85.1,
+      "revision": "ad6371c6a30bd4cb50fbf2c9d4a8a526bc833552-dirty",
       "image_definition_sha256": "6711050d0c2c415cb90435e3aed5574ee4778d4cb864eab458a2e643eed6abbc"
     },
     "video-host-vm": {
@@ -2337,9 +2337,9 @@
         "Thunder's JSON-RPC interface and the SSH server (SSH-2.0-dropbear_2020.81) answered this host at ports of its loopback address that the launcher forwards to the target's ports 9998 and 22 (--option forward)",
         "run with --graphics emulated, which an RDK-E image does not get unasked on this host: the target's CPU drew"
       ],
-      "checked_at": "2026-11-26T16:38:27Z",
-      "seconds": 40.4,
-      "revision": "68fe7d0cf3a7f5a2b015dd5f0197d1c01b6e9178-dirty",
+      "checked_at": "2026-11-26T23:52:18Z",
+      "seconds": 40.3,
+      "revision": "ad6371c6a30bd4cb50fbf2c9d4a8a526bc833552-dirty",
       "image_definition_sha256": "6711050d0c2c415cb90435e3aed5574ee4778d4cb864eab458a2e643eed6abbc"
     },
     "rdke-browser-other-graphics": {
@@ -2348,13 +2348,13 @@
       "description": "rdke-browser with the graphics an RDK-E image does not get unasked on this host",
       "details": [
         "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest, and RDK's browser plug-in HtmlApp (WPE WebKit) showed the image's page on a display of RDK's window manager: tvemu-app-start: HtmlApp shows file:///usr/share/tvemu/page/index.html on wst-htmlapp (1920x1080)",
-        "the launcher's window got the page's picture at 1920x1080: its red corner blocks and its background are where the page draws them; the plug-in reports 42 frames a second",
+        "the launcher's window got the page's picture at 1920x1080: its red corner blocks and its background are where the page draws them; the plug-in reports 43 frames a second",
         "13 remote control keys sent from the window arrived in the page, each with a web page's name and code for it: ok as Enter, up as ArrowUp, down as ArrowDown, left as ArrowLeft, right as ArrowRight, back as Backspace, 1 as 1, play as MediaPlay, red as ColorF0Red, green as ColorF1Green, yellow as ColorF2Yellow, blue as ColorF3Blue, exit as Escape",
         "run with --graphics emulated, which an RDK-E image does not get unasked on this host: the target's CPU drew"
       ],
-      "checked_at": "2026-11-26T16:36:10Z",
+      "checked_at": "2026-11-26T23:48:35Z",
       "seconds": 33.0,
-      "revision": "68fe7d0cf3a7f5a2b015dd5f0197d1c01b6e9178-dirty",
+      "revision": "ad6371c6a30bd4cb50fbf2c9d4a8a526bc833552-dirty",
       "image_definition_sha256": "6711050d0c2c415cb90435e3aed5574ee4778d4cb864eab458a2e643eed6abbc"
     },
     "rdke-launcher-other-graphics": {
@@ -2367,9 +2367,9 @@
         "the EXIT key went to the user interface, which ended the application: it is no longer in org.rdk.RDKShell's getState, its page is off the display, and the user interface has its display",
         "run with --graphics emulated, which an RDK-E image does not get unasked on this host: the target's CPU drew"
       ],
-      "checked_at": "2026-11-26T16:36:37Z",
-      "seconds": 27.5,
-      "revision": "68fe7d0cf3a7f5a2b015dd5f0197d1c01b6e9178-dirty",
+      "checked_at": "2026-11-26T23:49:03Z",
+      "seconds": 27.9,
+      "revision": "ad6371c6a30bd4cb50fbf2c9d4a8a526bc833552-dirty",
       "image_definition_sha256": "6711050d0c2c415cb90435e3aed5574ee4778d4cb864eab458a2e643eed6abbc"
     },
     "rdke-video-other-graphics": {
@@ -2378,16 +2378,16 @@
       "description": "rdke-video with the graphics an RDK-E image does not get unasked on this host",
       "details": [
         "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest, and RDK's browser plug-in HtmlApp (WPE WebKit) played the image's H.264 and AAC reference stream from a page: its player reports it playing at 1280x720, with its time moving",
-        "the launcher's window got the stream's picture, full screen at 1920x1080: its four corner blocks and its marker block have the stream's colours; decoding and drawing are done on the target's CPU, with the browser's processes at 326% of one CPU",
-        "the stream's 880 Hz tone reached the host-side process in 118 tenths of a second; path: target sound card (0 [SoundCard      ]: virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe",
+        "the launcher's window got the stream's picture, full screen at 1920x1080: its four corner blocks and its marker block have the stream's colours; decoding and drawing are done on the target's CPU, with the browser's processes at 320% of one CPU",
+        "the stream's 880 Hz tone reached the host-side process in 109 tenths of a second; path: target sound card (0 [SoundCard      ]: virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe",
         "the tone was recorded at the host's audio output",
-        "host output device: Astro A50 Voice, at volume 0; it played for 17.9 s by its own clock, 13.1 s of that the target's sound",
+        "host output device: Astro A50 Voice, at volume 0; it played for 16.9 s by its own clock, 12.0 s of that the target's sound",
         "the host's audio server reported the player process as playing on: Astro A50 Voice",
         "run with --graphics emulated, which an RDK-E image does not get unasked on this host: the target's CPU drew"
       ],
-      "checked_at": "2026-11-26T16:37:12Z",
-      "seconds": 34.4,
-      "revision": "68fe7d0cf3a7f5a2b015dd5f0197d1c01b6e9178-dirty",
+      "checked_at": "2026-11-26T23:49:37Z",
+      "seconds": 33.4,
+      "revision": "ad6371c6a30bd4cb50fbf2c9d4a8a526bc833552-dirty",
       "image_definition_sha256": "6711050d0c2c415cb90435e3aed5574ee4778d4cb864eab458a2e643eed6abbc"
     },
     "rdke-aamp-other-graphics": {
@@ -2396,16 +2396,16 @@
       "description": "rdke-aamp with the graphics an RDK-E image does not get unasked on this host",
       "details": [
         "the RDK-E image (Image and rootfs.ext4 in build/rdke/arm64) started in a host-native guest, and RDK's player AAMP, in the browser plug-in HtmlApp as the image's user interface uses it, played the image's reference stream as an HLS stream (H.264 and AAC in MPEG-2 transport stream segments) from the image's own web server: its player reports it playing at 1280x720, with its time moving",
-        "the launcher's window got the stream's picture, full screen at 1920x1080: its four corner blocks and its marker block have the stream's colours; decoding and drawing are done on the target's CPU, with the browser's processes at 340% of one CPU",
-        "the stream's 880 Hz tone reached the host-side process in 114 tenths of a second; path: target sound card (0 [SoundCard      ]: virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe",
+        "the launcher's window got the stream's picture, full screen at 1920x1080: its four corner blocks and its marker block have the stream's colours; decoding and drawing are done on the target's CPU, with the browser's processes at 346% of one CPU",
+        "the stream's 880 Hz tone reached the host-side process in 883 tenths of a second; path: target sound card (0 [SoundCard      ]: virtio-snd - VirtIO SoundCard) -> the emulated sound card's backend, through a named pipe",
         "the tone was recorded at the host's audio output",
-        "host output device: Astro A50 Voice, at volume 0; it played for 18.1 s by its own clock, 13.1 s of that the target's sound",
+        "host output device: Astro A50 Voice, at volume 0; it played for 103.5 s by its own clock, 101.8 s of that the target's sound",
         "the host's audio server reported the player process as playing on: Astro A50 Voice",
         "run with --graphics emulated, which an RDK-E image does not get unasked on this host: the target's CPU drew"
       ],
-      "checked_at": "2026-11-26T16:37:46Z",
-      "seconds": 34.8,
-      "revision": "68fe7d0cf3a7f5a2b015dd5f0197d1c01b6e9178-dirty",
+      "checked_at": "2026-11-26T23:51:37Z",
+      "seconds": 120.5,
+      "revision": "ad6371c6a30bd4cb50fbf2c9d4a8a526bc833552-dirty",
       "image_definition_sha256": "6711050d0c2c415cb90435e3aed5574ee4778d4cb864eab458a2e643eed6abbc"
     },
     "rdke-device-other-graphics": {
@@ -2417,9 +2417,9 @@
         "the display's description (EDID, 256 bytes) is the virtual device's, \"tv-emu TV\"; the serial number is the virtual device's (00000000TVEMU001), the maker \"tv-emu\" and the model \"TVEMU\"; the power state is ON and the front panel has its power light",
         "run with --graphics emulated, which an RDK-E image does not get unasked on this host: the target's CPU drew"
       ],
-      "checked_at": "2026-11-26T16:38:45Z",
-      "seconds": 18.1,
-      "revision": "68fe7d0cf3a7f5a2b015dd5f0197d1c01b6e9178-dirty",
+      "checked_at": "2026-11-26T23:52:36Z",
+      "seconds": 18.2,
+      "revision": "ad6371c6a30bd4cb50fbf2c9d4a8a526bc833552-dirty",
       "image_definition_sha256": "6711050d0c2c415cb90435e3aed5574ee4778d4cb864eab458a2e643eed6abbc"
     }
   }

@@ -34,6 +34,16 @@ do_install() {
         ${D}/home/root/lxresui/index.html
     grep -q tvemu-first-run.js ${D}/home/root/lxresui/index.html || \
         bbfatal "the user interface's page has no place for tvemu-first-run.js"
+    # The user interface sets the power state the device had before the restart
+    # (ON), and when org.rdk.System is activated it sets the state it last read
+    # once more. In about one start in nine that reading is still STANDBY, and
+    # the device then stays in standby (rdke/README.md, "How the power state
+    # gets to ON"). The second call is taken out: where it does not do that
+    # harm it sets ON again or is refused.
+    grep -q 'appApi.setPowerState(GLOBALS.powerState).then(res => {});' ${D}/home/root/lxresui/js/appBundle.js || \
+        bbfatal "the user interface's script has no second call of setPowerState to take out"
+    sed -i 's|appApi.setPowerState(GLOBALS.powerState).then(res => {});|/* tvemu: not set again, see the recipe */|' \
+        ${D}/home/root/lxresui/js/appBundle.js
     install -d ${D}${systemd_system_unitdir} ${D}${sysconfdir}/lighttpd.d
     install -m 0644 ${WORKDIR}/tvemu-refui.service ${D}${systemd_system_unitdir}/
     install -m 0644 ${WORKDIR}/tvemu-refui-docroot.conf ${D}${sysconfdir}/lighttpd.d/

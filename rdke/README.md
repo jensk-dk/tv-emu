@@ -1342,26 +1342,45 @@ unavailable with an older one where they can tell.
   (2026-11-26, in the whole of `./emu verify`); none was run on Linux.
 
 *How the power state gets to ON, and the fault in `rdke-device`*
-(2026-11-26, macOS, from the journal of boots with emulated graphics).
+(2026-11-26, macOS, from the journals of boots with emulated graphics).
 The image starts at STANDBY: the middleware's PowerManager says "Setting
 default powerstate to POWER_STATE_STANDBY" (`PLATCO_BOOTTO_STANDBY`) with
 "Power State Before Reboot: ON". RDK's user interface sets ON when it
-starts, about 3 s after the kernel: it compares the state before the
-reboot with the state now and calls `setPowerState`. It makes two calls
-within 3 ms. The first carries a state that PowerManager reads as UNKNOWN
-and refuses ("Failed to set power state: 1"); the second carries ON and
-finds "a state change request in progress for UNKNOWN state", which it
-cancels. `rdke-device` found STANDBY for the whole 60 s it waits in three
-whole runs of the checks on 2026-11-25. On 2026-11-26 the state was
-STANDBY 60 s after the start in one boot by hand and ON in the 23 boots
-after it, in the whole run of the checks (both graphics) and in a run of
-the check alone. That the two calls race, so that now and then ON is
-lost, is the likely cause and is **not shown**: the one boot that stayed
-at STANDBY did not have its journal read, and none could be made to
-since. Why it was three of three whole runs on one day and none on the
-next is not known. Nothing in the layer was changed for it; the check's
-failure message now carries the journal's lines about those calls. A
-device without that user interface stays at STANDBY until something
+starts, about 2 to 3 s after the kernel: it compares the state before the
+restart with the state now and calls `setPowerState` with ON
+(`_PowerStateHandlingWhileReboot` in its script).
+
+The fault is a second call of the user interface, about 50 ms after the
+first. When `org.rdk.System` is activated, its script sets the power state
+it last read, whatever that is (`appApi.setPowerState(GLOBALS.powerState)`).
+Shown on 2026-11-26 with 120 boots, three VMs at a time, each asked for its
+power state 40 s after the start and, where that was not ON, again at 65 s
+with the whole journal kept:
+
+| The second call carried | Boots of 120 | Then |
+|---|---|---|
+| a state not yet read, which PowerManager takes as UNKNOWN | 80 | refused ("Failed to set power state: 1"); stays ON |
+| ON | 26 | stays ON |
+| STANDBY | 14 | "Power state change to STANDBY", 50 ms after ON; still STANDBY at 65 s |
+
+So in about one start in nine the user interface undoes its own ON with a
+reading taken before ON had come about. An earlier note here had the order
+of the two calls the other way round and called the race likely; that was
+read from boots that all ended at ON. `rdke-device` found STANDBY in three
+of three whole runs of the checks on 2026-11-25, and not in the two whole
+runs of 2026-11-26; with one VM at a time it was 1 boot of 24 that day.
+Why one day and not the next is not explained beyond that the share
+differs with what else the host is doing.
+
+*The repair* (2026-11-27): the recipe `tvemu-refui` takes the second call
+out of the user interface's script when it installs it, and stops the
+build if the line is not there. Where the call did no harm it set ON again
+or was refused, so nothing else changes. The image was built again and
+booted 120 times the same way: ON in all 120, with one call of
+`setPowerState` in each. This is a change to RDK's released user interface
+(rdke-refui 5.0.24) made in this layer; it is not reported to RDK. The
+x86-64 image on the Linux host does not have it until it is built again.
+A device without that user interface stays at STANDBY until something
 sets ON.
 
 Every RDK-E check now starts the image with Thunder's and the SSH server's
@@ -1369,6 +1388,39 @@ ports forwarded to free ports of this host. Not covered by a check:
 Westeros alone, a video from the user interface's own cards (which are
 streams from the internet), setting a resolution or a power state, and a
 container.
+
+## The display at 4K: the image shows 1920x1080 whatever the launcher gives
+
+Found on 2026-11-26 on the Mac (ARM64 image), when the picture rate at 4K
+with the host's GPU was to be measured. It was not measured: the image as
+built has no 4K output, and with `--resolution 4k` its picture is wrong.
+
+- **What is seen.** With `--resolution 4k` the display's first mode is
+  3840x2160 and the kernel's state has the output at 1920x1080
+  (`/sys/kernel/debug/dri/0/state`). `tvemu-app-start` makes each
+  application's display the size of the first mode, so the browser draws a
+  page of 3840x2160 and the output shows its top left quarter. The rate
+  check's own measurement in that state, changing no file: 60.1 pictures a
+  second at the home screen and 58.2 during the reference stream with the
+  host's GPU (the VM's CPUs 97 % and 44 % idle), 60.1 and 59.5 with emulated
+  graphics (69 % and 27 % idle). These are numbers of a 1920x1080 output
+  under a page four times that size, not of 4K, and the check's picture
+  test fails, as it should.
+- **Two things hold the output at 1920x1080.** The first is
+  `WESTEROS_GL_GRAPHICS_MAX_SIZE=1920x1080` in this layer's
+  `00-wpeframework-vendor.conf`, taken from the Pi ("Max graphics size:
+  1920x1080", then "choosing output mode: 1920x1080x60"). The second is
+  RDK's window manager: with the first lifted in a running VM (a drop-in in
+  `/run`, Thunder started again), Westeros reads the display as 3840x2160
+  and the window manager says "forcing resolution to: 1920 x 1080", after
+  which Westeros chooses 1920x1080 again. Where the window manager takes
+  that size from was not read in its source.
+- **Not repaired, and nothing in the layer changed.** Two ways are open and
+  neither was tried: `tvemu-app-start` takes the output's size and not the
+  first mode's, so that 4K asked of the launcher gives a right picture at
+  1920x1080; or the window manager is brought to 3840x2160, which is what a
+  measurement at 4K needs. The launcher does not refuse `--resolution 4k`
+  for this image.
 
 ## What is open
 
@@ -1444,3 +1496,11 @@ Read on 2026-11-20, all Apache-2.0 or MIT: `vendor-manifest-raspberrypi`
 `meta-raspberrypi` (kirkstone); and `qemuarm64.conf` and `qemu.inc` of
 RDK's fork of poky (`rdk-4.7.0`). Lines taken from RDK's files keep their
 meaning and are marked with where they are from.
+
+## The report
+
+`rdke-report.pdf` is made from `report/report.html` and the four pictures
+beside it, with `report/make.sh` (a Chrome or Chromium of the host prints
+the page). The source is in the repository since 2026-11-26, after a power
+cut took the only copy; the pictures there were taken out of the seventh
+edition's PDF.

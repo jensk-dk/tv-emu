@@ -1387,15 +1387,29 @@ def _window_display(mode, arch="native"):
             "graphics provider: %s" % seen["emulator"]["graphics"]["provider"]]
 
 
+def _screen_locked():
+    """Whether this Mac's screen is locked, as its I/O registry says; False
+    where that cannot be asked."""
+    if host.host_os() != "macos":
+        return False
+    try:
+        said = subprocess.run(["ioreg", "-n", "Root", "-d1"], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return bool(re.search(r'"IOConsoleLocked" = Yes', said))
+
+
 def _kept_its_size(full):
     """What to say of a window that says it is full screen and did not grow.
     Seen on macOS with a window that the system has not made the active
     application, as it does not for one started from a session in the
-    background."""
+    background, and for no window at all while the screen is locked."""
     return ("the window reported full screen but kept its size (%dx%d on a %dx%d screen): this host's window "
-            "system did not carry the switch out%s. That the display fills the screen was not observed"
+            "system did not carry the switch out%s%s. That the display fills the screen was not observed"
             % (full["window"][0], full["window"][1], full["screen"][0], full["screen"][1],
-               "" if full["active"] else ", and had not made the window the active one"))
+               "" if full["active"] else ", and had not made the window the active one",
+               "; this host's screen is locked, and a window does not go to full screen then: unlock it and run "
+               "the check again" if _screen_locked() else ""))
 
 
 def _window_fullscreen(mode, arch="native"):
@@ -3501,13 +3515,12 @@ def check_rdke_device():
         call("model", "DeviceInfo.1.modelid")
         # The image starts at STANDBY (the middleware's PowerManager, "PLATCO_BOOTTO_STANDBY"), and
         # RDK's user interface sets ON when it starts: it finds the state before the reboot (ON)
-        # unlike the state now, and calls setPowerState. It makes two calls within 3 ms, the first
-        # with a state that PowerManager reads as UNKNOWN and refuses, the second with ON, which
-        # cancels the first "in progress" (journal, 2026-11-26). STANDBY was seen for all of the 60 s
-        # waited here in three full runs of the checks (2026-11-25, emulated graphics) and in one
-        # boot by hand of 24 on 2026-11-26; that the two calls race is the likely cause and was not
-        # shown: no boot that stayed at STANDBY had its journal read. A failure now says what the
-        # target's power file and the journal's lines about those calls have.
+        # unlike the state now, and calls setPowerState with ON. About 50 ms later its script set
+        # the state it had last read once more, and in 14 of 120 boots that reading was STANDBY, so
+        # the device stayed in standby (journals of 2026-11-26; rdke/README.md). The image's recipe
+        # takes that second call out since 2026-11-27, and 120 of 120 boots then came up ON; an
+        # image built before that still has the fault. A failure says what the target's power file
+        # and the journal's lines about those calls have.
         asked_at = time.monotonic()
         _wait(lambda: call("power", "org.rdk.System.1.getPowerState") or
               (seen["power"] or {}).get("powerState") == "ON", 60 * slow, 2)
