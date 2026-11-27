@@ -346,6 +346,18 @@ Vulkan, which with QEMU 8.2.2 is drawn by the target's CPU:
   compositor again and says so. That is also the likely cause of the one
   `gles-vm-arm32` failure with QEMU 11 ("lost the connection to the
   Wayland compositor"), which passed in three runs after.
+  Looked for again on 2026-11-26 and 27 with image 0.6.2, which has no
+  Vulkan on ARM32: the target was given a core handler (the kernel's
+  `core_pattern` piped to a file on its data disk, sent to the host over
+  the VM's network) and a debugger with the image's ARM32 debug symbols
+  was made ready on the host. The fault did not come: not in 12 rounds of
+  the Wayland and OpenGL ES playbacks, not in 16 rounds of every playback
+  with the pause for a capture, and not in 5 rounds on one compositor
+  kept up between streams (about 200 playbacks). It was last seen with
+  image 0.6.1, whose ARM32 target still had the Vulkan renderer that
+  corrupts its memory; whether leaving that out ended it is not known,
+  since the fault was also seen then in runs with no Vulkan program.
+  **Not found, and not shown to be gone.**
 
 With these, on the same host: `video-wayland-vm`, `video-gles-vm`,
 `video-vulkan-vm` and `video-flutter-vm` pass with QEMU 11.0.0, the Vulkan
@@ -371,6 +383,20 @@ passed, 4 failed and 2 could not be run on this host.
   STB simulator on ARM32, and the six checks of the RDK-E image.
 - **`rdke-rate` and `rdke-rate-host`** pass in both runs: 60.0 pictures a
   second at the home screen, and 59.5 to 60.0 while the stream plays.
+
+After the merge with the Mac's eight new checks, and with an RDK-E image
+drawn by the host's GPU unasked on this host and its user interface's
+stray power call left out, every check was run again as the host is set
+up, on 2026-11-27: 153 of the 159 pass, with the same 4 failed and the
+same 2 that could not be run. `video-host-vm` played every stream on
+the host's GPU with no frame dropped through Wayland, OpenGL ES and
+Vulkan (79 to 82 of 125 through Flutter, as with emulated graphics);
+`rdke-rate-host-60` got 58.1 to 59.9 pictures a second in the window with
+60 frames a second shown by the player and none of 631 dropped; the six
+`rdke-*-other-graphics` checks pass with the host's GPU (run alone, before
+the change) and with emulated graphics (in the whole run, after it). A
+search for the ARM32 compositor's fault ran on the host during the first
+third of that run.
 
 ## Measured on the Mac
 

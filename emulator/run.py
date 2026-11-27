@@ -200,10 +200,21 @@ def _require_rdke(opts):
 
 def rdke_host_unasked(guest):
     """Whether an RDK-E image for `guest` is drawn by the host's GPU when a
-    run does not say: on macOS, host-native, where a QEMU on this host reads
-    the picture back for the launcher's window."""
-    return bool(host.host_os() == "macos" and guest == host.host_arch()
-                and graphics.dbus_read_back(graphics.host_graphics_binary(vm.QEMU_BINARY[guest])))
+    run does not say. On macOS, host-native: where a QEMU on this host reads
+    the picture back for the launcher's window. On Linux, host-native: where
+    setup.sh built the experimental QEMU, which shows such a display 60
+    times a second (the installed one before QEMU 11 holds it to 30), it can
+    use the host's GPU, and the launcher's window takes the GPU's buffers."""
+    if guest != host.host_arch():
+        return False
+    name = vm.QEMU_BINARY[guest]
+    if host.host_os() == "macos":
+        return bool(graphics.dbus_read_back(graphics.host_graphics_binary(name)))
+    if host.host_os() == "linux" and graphics.host_graphics_qemu(name):
+        binary = graphics.host_graphics_binary(name)
+        return bool(graphics.probe_vm(binary, guest=guest)["available"]
+                    and graphics.probe_buffer_window(binary)["available"])
+    return False
 
 
 def launch(opts):
@@ -381,9 +392,9 @@ def launch(opts):
                 data_disk = run_dir / "data.img"
                 with open(data_disk, "wb") as handle:
                     handle.truncate(int(opts.options.get("data-disk-mb", DEFAULT_DATA_DISK_MB)) * 1024 * 1024)
-            # macOS, host-native: an RDK-E image is drawn by the host's GPU unasked where a QEMU on
-            # this host reads the picture back for the launcher (60 pictures a second with the VM's
-            # CPUs mostly idle, docs/frame-transfer.md). Elsewhere it stays emulated unless asked.
+            # Host-native on macOS and Linux: an RDK-E image is drawn by the host's GPU unasked where
+            # the experimental QEMU is there and the launcher's window gets its pictures 60 times a
+            # second (rdke_host_unasked; docs/frame-transfer.md). Elsewhere it stays emulated unless asked.
             rdke_host = rdke_emulated and opts.options.get("window") != "qemu" and rdke_host_unasked(guest)
             if rdke_host:
                 rdke_emulated, opts.graphics = False, "host"

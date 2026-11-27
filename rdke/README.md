@@ -1148,7 +1148,11 @@ process):
   on a Mac is drawn by the host's GPU unasked where a QEMU that reads the
   picture back is installed (`./setup.sh --experimental-qemu`); the run
   says so, `--graphics emulated` asks for the other, and a Mac without
-  that QEMU emulates as before. The image's checks then run with the
+  that QEMU emulates as before. Since 2026-11-26, at the user's direction,
+  the same holds on Linux for a host-native target where `./setup.sh
+  --experimental-qemu` built QEMU 11 and the launcher's window takes the
+  GPU's buffers; a Linux host without that build emulates as before, since
+  its QEMU 8.2.2 shows such a display 30 times a second. The image's checks then run with the
   host's GPU as well, except `rdke-rate`, which asks for emulated graphics
   by name. `rdke-rate-host-60` plays a 1920x1080 clip of 60 frames a
   second, made on the host with the Debian image's FFmpeg, and asks 50
@@ -1339,7 +1343,10 @@ unavailable with an older one where they can tell.
   the host's GPU, and the check ends as unavailable where the launcher's
   window cannot show such a display. Each says which graphics it asked for
   and requires that the launcher gave it. All six pass on the Mac
-  (2026-11-26, in the whole of `./emu verify`); none was run on Linux.
+  (2026-11-26, in the whole of `./emu verify`). On the Linux host
+  (x86-64, QEMU 11.0.0, NVIDIA GPU) all six passed that day with the
+  host's GPU, before the image got it unasked there; since then they ask
+  for emulated graphics on that host as on the Mac.
 
 *How the power state gets to ON, and the fault in `rdke-device`*
 (2026-11-26, macOS, from the journals of boots with emulated graphics).
@@ -1382,6 +1389,22 @@ booted 120 times the same way: ON in all 120, with one call of
 x86-64 image on the Linux host does not have it until it is built again.
 A device without that user interface stays at STANDBY until something
 sets ON.
+
+*A second way the same call does harm* (2026-11-26, Linux, x86-64,
+host-native; found before the Mac's work above was pulled). In 40 boots of
+the image (`rdke-device` and `rdke-device-other-graphics`, 20 times each)
+one stayed at STANDBY, and in its journal the second call carried no state
+yet, as in the table's first row, but came while the ON was still under
+way: "There is a state change request in progress for ON state", "Power
+state change is already in progress, cancel old request", then "newState:
+UNKNOWN" and "Failed to set power state: 1". The refused call had
+cancelled the ON, and nothing set ON afterwards. So a call without a state
+is not always harmless, as the table's first row has it for the Mac's 80
+boots. The Linux host first made the call only when there was a state to
+set, and 80 boots in a row had ON with that; it would not have stopped the
+STANDBY case of the table. The repair above takes the call out and so
+covers both; it replaced the Linux one at the merge of 2026-11-27, and the
+x86-64 image was built again with it that day.
 
 Every RDK-E check now starts the image with Thunder's and the SSH server's
 ports forwarded to free ports of this host. Not covered by a check:

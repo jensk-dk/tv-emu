@@ -2953,7 +2953,7 @@ _rdke_provider = None
 def _rdke_other(check):
     """`check`, an RDK-E check that names no graphics, with the graphics that
     such an image does not get unasked on this host: emulated where that is
-    the host's GPU (macOS with the experimental QEMU), the host's GPU where
+    the host's GPU (macOS or Linux with the experimental QEMU), the host's GPU where
     it is emulated. So each of these checks sees the image drawn both ways."""
     def run():
         global _rdke_unasked
@@ -3519,8 +3519,10 @@ def check_rdke_device():
         # the state it had last read once more, and in 14 of 120 boots that reading was STANDBY, so
         # the device stayed in standby (journals of 2026-11-26; rdke/README.md). The image's recipe
         # takes that second call out since 2026-11-27, and 120 of 120 boots then came up ON; an
-        # image built before that still has the fault. A failure says what the target's power file
-        # and the journal's lines about those calls have.
+        # image built before that still has the fault. On Linux the same call did the harm another
+        # way in 1 boot of 40: without a state yet, which PowerManager reads as UNKNOWN and refuses,
+        # it cancelled the ON still in progress. A failure says what the target's power file and the
+        # journal's lines about those calls have.
         asked_at = time.monotonic()
         _wait(lambda: call("power", "org.rdk.System.1.getPowerState") or
               (seen["power"] or {}).get("powerState") == "ON", 60 * slow, 2)
@@ -3602,7 +3604,7 @@ def check_rdke_rate():
     the reference stream. The image's compositor shows a picture each
     refresh of its 60 Hz mode, and the window is to get them. Asked with
     emulated graphics, which is not what such an image gets unasked on every
-    host (macOS with the experimental QEMU: the host's GPU)."""
+    host (macOS or Linux with the experimental QEMU: the host's GPU)."""
     return _rdke_rate("emulated")
 
 

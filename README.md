@@ -856,7 +856,8 @@ says so. Every other run keeps the installed QEMU, which is what the host
 is evaluated with: `--graphics auto` emulates as before. One kind of run
 gets the host's GPU unasked: an RDK-E image in a host-native VM
 (`--rootfs rdke`), since 2026-11-25; `--graphics emulated` asks for the
-other there.
+other there. On Linux the same holds since 2026-11-26 where the experimental
+QEMU is built and the launcher's window takes the GPU's buffers.
 
     ./emu run --mode vm --workload graphics-demo --graphics host --window
 
